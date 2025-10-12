@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+jinja2
+sqlmodel
+passlib[bcrypt]
+itsdangerous
+python-jose[cryptography]
+email-validator
+python-multipart
+httpx
+pydantic-settings
+readability-lxml
+openai
+pytest
+pytest-cov

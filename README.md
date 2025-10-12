@@ -1,287 +1,482 @@
-# 🧠 MyApply
+# 🎯 MyApply
 
-**AI-driven resume and cover letter composer built with FastAPI, TailwindCSS, and OpenAI AgentKit.**  
-*Built for learning, experimentation, and simplifying the job application workflow.*
+**AI-powered career tooling that transforms your experience into tailored resumes and cover letters.**
 
----
+MyApply is a FastAPI-powered platform that combines structured experience graphs with AgentKit workflows to generate personalized application materials. Built for speed, deployed to Railway in minutes.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python Version">
-  <img src="https://img.shields.io/badge/framework-FastAPI-009688.svg" alt="FastAPI">
-  <img src="https://img.shields.io/badge/LLM-OpenAI%20AgentKit-412991.svg" alt="OpenAI AgentKit">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-</p>
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🎯 Purpose
+## ✨ Features
 
-**MyApply** helps users quickly tailor resumes and cover letters for specific job applications using AI reasoning over structured experience data.
+### 🤖 AgentKit Workflow Integration
+- **Intent Routing** - Smart workflow selection based on user needs
+- **JD Structuring** - Parse job descriptions into structured data
+- **Resume Building** - Generate tailored resumes with AI
+- **Backend Orchestration** - Workflows communicate via backend conductor pattern
+- **Persistent Metadata** - All runs and artifacts stored in database
 
-Instead of rewriting your resume for every job, you maintain a personal **experience graph** — a JSON model of your work, projects, and skills.  
-When you paste a job description, MyApply analyzes it, extracts ATS keywords, and suggests concise, relevant content that best fits that role.
+### 👤 User Management
+- **Secure Authentication** - CSRF-protected sessions with bcrypt hashing
+- **Rate Limiting** - Login attempt throttling
+- **Profile Management** - Store location, skills, and experience
+- **Admin Panel** - User and run management
 
-> Think of it as *"Notion for your professional experience"* + *"an Agent that writes your best story for each job."*
+### 📝 Experience Graph
+- **JSON/JSONL Editor** - Structured experience data storage
+- **Graph Validation** - Schema enforcement for nodes and edges
+- **Fact Ranking** - Score experiences against job requirements
+- **Evidence Retrieval** - Query system for experience matching
 
----
+### 🗺️ Job Tracking
+- **Application Dashboard** - Track all job applications
+- **Interactive Maps** - Mapbox GL JS with job location clustering
+- **Distance Calculations** - Haversine distance from home
+- **Isochrone Visualization** - Travel time polygons for commute planning
+- **Location Intelligence** - Multi-location support with confidence scores
 
-## 🧩 Key Features
+### 🎨 AI Composer
+- **JD Factor Extraction** - Identify key requirements from postings
+- **Resume Bullet Generation** - AI-powered achievement bullets
+- **Cover Letter Writing** - Personalized cover letters with fact references
+- **ATS Optimization** - Keyword coverage tracking
+- **Token Usage Tracking** - Monitor LLM costs
 
-| Feature | Description |
-|----------|-------------|
-| 🧑‍💻 **Account System** | Secure login using `fastapi-users` with JWT cookies. |
-| 🧱 **Experience Graph Editor** | Visual + text-based JSON editor for your professional history. |
-| 📄 **JD Composer** | Paste or link a job description; add your vibe prompt. |
-| ⚙️ **AgentKit AI Engine** | Generates ranked resume bullet points and a passionate cover letter draft. |
-| 🎯 **ATS Keyword Analysis** | Detects must-have terms from job listings and ensures they're reflected in results. |
-| 💾 **Runs History** | Automatically stores your previous generations and JD context. |
-| 💡 **Lightweight and Local** | Entirely Python-native—no external dependencies beyond OpenAI’s API. |
-
----
-
-## 🧠 Stack Overview
-
-| Layer | Tool | Role |
-|-------|------|------|
-| Backend | **FastAPI** | Core API + routing |
-| Database | **SQLite + SQLModel** | Store users, experience graphs, and runs |
-| Auth | **fastapi-users** | Handles registration, login, and sessions |
-| Frontend | **Jinja2 + HTMX + TailwindCSS (DaisyUI)** | Clean UI with minimal JS |
-| AI Layer | **OpenAI Python SDK + AgentKit** | LLM-based extraction, ranking, and generation |
-| JSON Editing | **JSONEditor (embedded)** | Experience graph manipulation |
-
----
-
-## 🏗️ Architecture
-
-```
-
-```
-    ┌───────────────────────────────┐
-    │          Frontend             │
-    │  Jinja2 + HTMX + TailwindCSS  │
-    └──────────────┬────────────────┘
-                   │
-                   ▼
-    ┌───────────────────────────────┐
-    │          FastAPI              │
-    │  Routes: /auth /graph /compose│
-    └──────────────┬────────────────┘
-                   │
-                   ▼
-    ┌───────────────────────────────┐
-    │         SQLModel ORM          │
-    │   SQLite DB (User, Graph, Run)│
-    └──────────────┬────────────────┘
-                   │
-                   ▼
-    ┌───────────────────────────────┐
-    │      AgentKit / OpenAI API    │
-    │  - JD Factor Extraction       │
-    │  - Fact Ranking               │
-    │  - Resume + Letter Generation │
-    └───────────────────────────────┘
-```
-
-````
+### 🔧 Developer Tools
+- **AgentKit Tool API** - JSON endpoints for multi-agent integration
+- **Tool Specification** - OpenAPI-style tool definitions
+- **Bundle Storage** - Stateful generation bundles with TTL
+- **Batch Operations** - Evidence batch retrieval
+- **Rate Limiting** - Token bucket per user
 
 ---
 
-## 🧰 Quick Start
+## 🛠️ Tech Stack
 
-### 1️⃣ Clone and Install
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Backend** | FastAPI, SQLModel, Pydantic | API, ORM, validation |
+| **Database** | SQLite / PostgreSQL | Data persistence |
+| **Frontend** | Jinja2, HTMX, TailwindCSS | Server-rendered UI |
+| **AI/ML** | OpenAI API, AgentKit | LLM, workflow orchestration |
+| **Maps** | Mapbox GL JS, Isochrone API | Visualization, travel time |
+| **Auth** | Passlib[bcrypt], itsdangerous | Security, sessions |
+| **Testing** | Pytest, httpx | Unit & integration tests |
+| **Deployment** | Railway, Uvicorn | Cloud hosting, ASGI server |
+
+---
+
+## 🚀 Quick Start
+
+### Local Development
+
 ```bash
-git clone https://github.com/<your-username>/MyApply.git
+# Clone and setup
+git clone https://github.com/your-username/MyApply.git
 cd MyApply
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-````
 
-### 2️⃣ Environment Variables
+# Configure
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
 
-Create a `.env` file in the root directory:
+# Run
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
-```bash
-OPENAI_API_KEY=sk-your-key
-AGENTKIT_API_URL=https://api.openai.com/v1/agentkit
-SECRET_KEY="your_secret_key"
-DATABASE_URL="sqlite:///./myapply.db"
+# Visit http://127.0.0.1:8000
 ```
 
-### 3️⃣ Run Database Setup
+### Create Admin User
 
 ```bash
-python -m app.init_db
+python scripts/create_admin.py admin@example.com "SecurePassword123!"
 ```
 
-### 4️⃣ Start the Server
+### Run Tests
 
 ```bash
-uvicorn app:app --reload
+pytest -v                              # All tests
+pytest tests/test_agentkit_routes.py  # AgentKit tests only
+pytest --cov=. --cov-report=html      # With coverage
 ```
-
-Visit **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
 ---
 
-## 🖥️ Core Pages
+## 🤖 AgentKit API Endpoints
 
-| Page             | Purpose                                      |
-| ---------------- | -------------------------------------------- |
-| `/auth/register` | Create an account                            |
-| `/graph`         | View and edit your experience graph          |
-| `/compose`       | Paste a job description and generate content |
-| `/runs`          | View history of past generations             |
+### Structure Job Description
 
----
+Parse raw JD into structured format with locations, skills, and requirements.
 
-## 🧩 Experience Graph Example
+```bash
+POST /api/jd/structure
+```
 
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/jd/structure \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "user_id": "user-123",
+    "jd_text": "Senior Python Developer\n\nRequirements:\n- 5+ years Python\n- FastAPI\n\nLocation: San Francisco, CA"
+  }'
+```
+
+**Response:**
 ```json
 {
-  "meta": {
-    "schema_version": "1.0",
-    "person_id": "person:boss",
-    "last_updated": "2025-10-09"
-  },
-  "nodes": [
-    {"id": "org:delta", "t": "Org", "n": "Delta Air Lines"},
-    {"id": "role:coop", "t": "Role", "n": "Operations Support Co-op", "org": "org:delta"}
-  ],
-  "facts": [
-    {
-      "id": "ach:automation",
-      "t": "Achievement",
-      "role": "role:coop",
-      "action": "Automated pilot work reporting",
-      "result": {"metric": "time", "delta": -0.6},
-      "tags": ["Smartsheet", "Automation"]
-    }
-  ]
+  "ok": true,
+  "run_id": "abc123",
+  "structured_jd": {
+    "title": "Senior Python Developer",
+    "seniority": "senior",
+    "locations": [{"city": "San Francisco", "region": "CA", "type": "hybrid"}],
+    "skills": {"must_have": ["Python", "FastAPI"]}
+  }
 }
 ```
 
----
+### Build Resume
 
-## ⚙️ Development Workflow
-
-1. **Edit Graph**
-
-   * Manage your data in `/graph`
-   * Validate JSON schema in-browser
-2. **Compose Content**
-
-   * Paste JD or URL, add optional vibe prompt
-   * Choose Resume / Cover Letter generation
-3. **LLM Pipeline**
-
-   * AgentKit extracts company, role, level, keywords
-   * Ranks your experiences from graph
-   * Returns plain-text content (no formatting)
-4. **Review + Copy**
-
-   * Outputs are fully editable before export
-
----
-
-## 📦 Folder Structure
-
-```
-myapply/
-├── app.py              # FastAPI app entry
-├── auth.py             # User management
-├── models.py           # SQLModel tables
-├── llm.py              # OpenAI / AgentKit integration
-├── templates/          # Jinja2 HTML templates
-│   ├── base.html
-│   ├── graph.html
-│   ├── compose.html
-│   └── login.html
-├── static/
-│   ├── css/
-│   └── js/
-└── README.md
-```
-
----
-
-## 🧑‍💻 For Developers
-
-### Tech Highlights
-
-* Pure Python stack — no React or heavy JS required
-* Hot reload with `uvicorn --reload`
-* SQLite + SQLModel = zero setup
-* Works offline except for LLM API calls
-
-### Future Enhancements
-
-* PDF export using WeasyPrint
-* Multi-user dashboard
-* Model-driven ATS scoring
-* Optional vector memory for career data search
-
----
-
-## 🌐 Deployment
-
-Deploy easily with [Render](https://render.com/), [Railway](https://railway.app/), or [Fly.io](https://fly.io/).
-
-Example Fly.io setup:
+Generate tailored resume with auto-orchestration (structures JD if needed).
 
 ```bash
-fly launch
-fly deploy
+POST /api/resume/build
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/resume/build \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "user_id": "user-123",
+    "jd_text": "Backend Engineer role...",
+    "target_role": "Backend Engineer"
+  }'
+```
+
+### Get Workflow Run
+
+Retrieve stored run metadata and artifacts.
+
+```bash
+GET /api/runs/{run_id}
 ```
 
 ---
 
-## 📸 UI Preview (Concept)
+## ☁️ Railway Deployment
 
-```
-╭─────────────────────────────────────────────╮
-│ MyApply                                     │
-│---------------------------------------------│
-│ Paste Job Description  [ Text Area ]        │
-│ Vibe / Story Prompt   [ Optional Text ]     │
-│ [✔] Tailored Resume   [✔] Tailored Cover    │
-│                                             │
-│ [Generate]                                  │
-│---------------------------------------------│
-│ 🔹 Resume Bullets                           │
-│  - Automated pilot work reporting...        │
-│  - Built Smartsheet archival system...      │
-│                                             │
-│ 🔹 Cover Letter                             │
-│  Dear Hiring Team,                          │
-│  I’m passionate about leveraging analytics… │
-│                                             │
-╰─────────────────────────────────────────────╯
+Deploy to Railway in 3 steps:
+
+1. **Create project:** Link your GitHub repo at [railway.app/new](https://railway.app/new)
+
+2. **Add PostgreSQL:** Click "+ New" → Database → PostgreSQL
+
+3. **Set environment variables:**
+
+```bash
+ENV=production
+SECRET_KEY=<generate-with-python-secrets>
+OPENAI_API_KEY=sk-your-key
+SESSION_SECURE=true
+ALLOWED_ORIGINS=https://your-app.railway.app
 ```
 
----
+Railway auto-detects FastAPI and sets `PORT` and `DATABASE_URL`.
 
-## 💡 Why Build This
-
-To explore:
-
-* LLMs as intelligent assistants for structured data
-* AI-assisted storytelling in career materials
-* Integrating OpenAI AgentKit into a real product workflow
-
-MyApply serves as both a **learning sandbox** and a **personal automation tool** for anyone refining their professional narrative.
+**Full deployment guide:** [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ---
 
-## 🧾 License
+## 📁 Project Structure
 
-Released under the **MIT License**.
-Feel free to fork, study, or modify for personal and educational use.
+```
+MyApply/
+├── app.py                      # FastAPI application & main routes
+├── auth.py                     # Authentication & session management
+├── models.py                   # SQLModel database tables
+├── agentkit.py                 # AgentKit workflow runner
+├── routes.py                   # AgentKit REST endpoints
+├── llm.py                      # LLM pipeline for compose features
+├── validation.py               # Input sanitization
+├── graph/                      # Experience graph system
+│   ├── schema.py              # Node/edge types & validation
+│   ├── loader.py              # JSONL import & graph management
+│   └── scoring.py             # Fact ranking algorithms
+├── myapply_tools/             # AgentKit tool service
+│   ├── app.py                 # Tool API FastAPI app
+│   ├── routers/               # Tool endpoints
+│   └── schemas.py             # Tool request/response models
+├── templates/                  # Jinja2 HTML templates
+├── static/                     # CSS, JS, images
+├── tests/                      # Pytest test suite
+├── scripts/                    # Admin & utility scripts
+├── DEPLOYMENT.md              # Deployment guide
+└── requirements.txt           # Python dependencies
+```
 
 ---
 
-<p align="center">
-  <b>Built with ❤️ in Python for learners, builders, and job seekers.</b><br>
-  <i>FastAPI • Tailwind • AgentKit • OpenAI</i>
-</p>
+## 🔒 Environment Variables
+
+### Required
+
+```bash
+SECRET_KEY=<generate-with-python-secrets>    # Session encryption
+OPENAI_API_KEY=sk-your-key                   # OpenAI API access
+DATABASE_URL=sqlite:///./myapply.db          # Database connection
+```
+
+### Optional
+
+```bash
+# LLM Configuration
+LLM_MODEL=gpt-4o-mini                        # Default model
+COVER_LETTER_MODEL=gpt-4o                    # Cover letter model
+
+# Mapbox (for map features)
+MAPBOX_PUBLIC_TOKEN=pk.your-token
+MAPBOX_ACCESS_TOKEN=pk.your-access-token
+
+# CORS
+ALLOWED_ORIGINS=http://localhost:8000,http://localhost:3000
+
+# Environment
+ENV=development                               # or production
+PORT=8000                                     # Server port
+```
+
+**Full reference:** [DEPLOYMENT.md#environment-variables](DEPLOYMENT.md#environment-variables)
+
+---
+
+## 📊 Database Schema
+
+### Core Tables
+
+- **`user`** - User accounts with auth & profile data
+- **`workflow_run`** - AgentKit workflow execution metadata
+- **`artifact`** - Workflow output artifacts (structured JDs, resume sections)
+- **`job_applied`** - Job application history
+- **`job_location`** - Multi-location support with geocoding
+- **`compose_run`** - LLM compose run history & token usage
+- **`user_graph`** - User experience graphs (JSON storage)
+- **`nodes`** - Graph nodes (tasks, projects, skills, etc.)
+- **`edges`** - Graph relationships with temporal bounds
+
+### Migrations
+
+Tables auto-created via SQLModel on startup. For production, use Alembic:
+
+```bash
+pip install alembic
+alembic init migrations
+alembic revision --autogenerate -m "Initial schema"
+alembic upgrade head
+```
+
+---
+
+## 🧪 Testing
+
+### Test Coverage
+
+- ✅ Authentication flows (CSRF, rate limiting, sessions)
+- ✅ Profile & job application APIs
+- ✅ AgentKit workflow orchestration
+- ✅ Locations array serialization
+- ✅ Graph validation & JSONL import
+- ✅ Bundle storage with TTL expiry
+- ✅ Evidence retrieval & pagination
+
+### Run Tests
+
+```bash
+# All tests with verbose output
+pytest -v
+
+# Specific test file
+pytest tests/test_agentkit_routes.py -v
+
+# With coverage report
+pytest --cov=. --cov-report=html
+open htmlcov/index.html
+
+# Fast (skip slow tests)
+pytest -m "not slow"
+```
+
+---
+
+## 🔧 Development
+
+### Code Quality
+
+```bash
+# Linting
+ruff check .
+
+# Formatting
+ruff format .
+
+# Type checking
+mypy app.py models.py routes.py
+```
+
+### Database Management
+
+```bash
+# SQLite console
+sqlite3 myapply.db
+
+# PostgreSQL console (Railway)
+railway run psql $DATABASE_URL
+
+# Reset database (⚠️ destroys data)
+rm myapply.db
+uvicorn app:app --reload  # Recreates tables
+```
+
+### Adding a Workflow
+
+1. Add workflow config in `routes.py`:
+   ```python
+   WORKFLOW_NEW = {
+       "id": "wf_...",
+       "version": "1",
+   }
+   ```
+
+2. Create endpoint function:
+   ```python
+   @router.post("/api/new/endpoint")
+   def api_new_endpoint(...):
+       result = run_workflow(
+           workflow_id=WORKFLOW_NEW["id"],
+           version=WORKFLOW_NEW["version"],
+           input_vars={...}
+       )
+       ...
+   ```
+
+3. Add tests in `tests/test_agentkit_routes.py`
+
+---
+
+## 🗺️ Map Features
+
+### Setup Mapbox
+
+1. Get tokens at [mapbox.com/account/access-tokens](https://account.mapbox.com/access-tokens)
+
+2. Add to `.env`:
+   ```bash
+   MAPBOX_PUBLIC_TOKEN=pk.your-public-token
+   MAPBOX_ACCESS_TOKEN=pk.your-access-token
+   ```
+
+3. Restart server
+
+### Features
+
+- **Job Clustering** - Groups nearby jobs on map
+- **Isochrones** - Travel time polygons (drive/walk/bike)
+- **Distance Calculation** - Haversine distance from home
+- **Multi-Location Jobs** - Support for remote/hybrid/onsite mix
+- **Location Confidence** - AI-extracted location confidence scores
+
+---
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `OPENAI_API_KEY not configured` | Add to `.env` and restart server |
+| CORS errors in browser | Add your origin to `ALLOWED_ORIGINS` |
+| Session/cookie issues | Set `SESSION_SECURE=false` for local HTTP |
+| Database errors | Check `DATABASE_URL` and ensure directory exists |
+| Mapbox maps not loading | Verify `MAPBOX_PUBLIC_TOKEN` is set |
+| Workflow 502 errors | Check OpenAI API key & rate limits |
+
+**Full troubleshooting guide:** [DEPLOYMENT.md#troubleshooting](DEPLOYMENT.md#troubleshooting)
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Guidelines
+
+- Write tests for new features
+- Follow existing code style (use `ruff`)
+- Update documentation
+- Add type hints where possible
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [OpenAI](https://openai.com/) - LLM & AgentKit platform
+- [Mapbox](https://mapbox.com/) - Mapping & geocoding
+- [Railway](https://railway.app/) - Deployment platform
+- [HTMX](https://htmx.org/) - Progressive enhancement
+
+---
+
+## 📚 Documentation
+
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide (Railway, local, environment vars)
+- **[MyLifeSchemaInstructions.md](MyLifeSchemaInstructions.md)** - Experience graph schema reference
+
+---
+
+## 🚀 What's Next?
+
+- [ ] Real-time collaboration on experience graphs
+- [ ] Multi-language support
+- [ ] Resume templates & visual editor
+- [ ] Chrome extension for quick JD capture
+- [ ] Mobile app (React Native)
+- [ ] Analytics dashboard for application tracking
+- [ ] ATS parsing & compatibility scoring
+- [ ] Interview prep integration
+
+---
+
+**Built with ❤️ for job seekers everywhere.**
+
+**Questions?** Open an issue or start a discussion!
+
+---
+
+### Quick Links
+
+- 🌐 [Live Demo](https://myapply.railway.app) *(replace with your URL)*
+- 📖 [Full Documentation](DEPLOYMENT.md)
+- 🐛 [Report Bug](https://github.com/your-username/MyApply/issues)
+- 💡 [Request Feature](https://github.com/your-username/MyApply/issues)
+- 💬 [Discussions](https://github.com/your-username/MyApply/discussions)

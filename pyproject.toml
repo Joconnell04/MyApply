@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myapply-tools"
+version = "0.1.0"
+description = "AgentKit tool service for MyApply"
+readme = "myapply_tools/README_TOOLS.md"
+requires-python = ">=3.11"
+authors = [{name = "MyApply"}]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlmodel",
+    "pydantic-settings",
+    "httpx",
+    "python-dotenv"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+    "ruff"
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = [
+    "myapply_tools/tests",
+    "tests"
+]
