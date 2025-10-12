@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import html
-import io
 import json
 import re
 from math import atan2, cos, radians, sin, sqrt
@@ -9,13 +7,12 @@ from collections.abc import Iterator
 from datetime import datetime
 from functools import lru_cache
 from html import unescape
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
@@ -37,7 +34,7 @@ from auth import (
 from graph.loader import GraphLoader, parse_graph_payload
 from graph.scoring import rank_facts
 from llm import LLMPipeline
-from models import ComposeRun, JobApplied, JobLocation, User, UserGraph
+from models import ComposeRun, JobApplied, JobLocation, User
 from validation import sanitize_string, validate_json_size, validate_url
 
 
@@ -124,7 +121,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 login_rate_limiter = LoginRateLimiter()
 
-GRAPH_SPEC_PATH = Path("MyLifeSchemaInstructions.md")
 pipeline = LLMPipeline(
     api_key=settings.OPENAI_API_KEY,
     model=settings.LLM_MODEL,
@@ -218,40 +214,6 @@ class IsochroneRequestPayload(BaseModel):
                 detail="minutes must be between 1 and 180.",
             )
         return self
-
-
-async def _extract_graph_payload(request: Request) -> Tuple[Any, Optional[str]]:
-    content_type = request.headers.get("content-type", "")
-    payload: Any
-    csrf_token: Optional[str] = None
-    if content_type.startswith("application/json"):
-        body = await request.json()
-        if isinstance(body, dict):
-            csrf_token = body.pop("csrf_token", None)
-        if isinstance(body, dict) and "graph" in body:
-            payload = body["graph"]
-        elif isinstance(body, dict) and "graph_json" in body:
-            payload = body["graph_json"]
-        else:
-            payload = body
-    else:
-        form = await request.form()
-        csrf_token = form.get("csrf_token")
-        if "graph_json" not in form:
-            raise ValueError("Missing graph_json payload.")
-        payload = form["graph_json"]
-
-    if isinstance(payload, str):
-        payload = payload.strip()
-        if not payload:
-            return {}, csrf_token
-        payload = json.loads(payload)
-
-    if isinstance(payload, list):
-        return {"objects": payload}, csrf_token
-    if isinstance(payload, dict):
-        return payload, csrf_token
-    raise ValueError("Graph payload must be an object or array.")
 
 
 def _strip_html(content: str) -> str:
@@ -1087,12 +1049,7 @@ async def api_compose(
 
     jd_factors, jd_meta = await pipeline.extract_jd_factors(jd_content)
 
-    user_graph = session.get(UserGraph, current_user.id)
-    graph_payload: Any
-    if user_graph and user_graph.graph:
-        graph_payload = user_graph.graph
-    else:
-        graph_payload = {"nodes": [], "edges": []}
+    graph_payload: Any = current_user.mylife_json or {"nodes": [], "edges": []}
 
     with Session(engine) as validation_session:
         loader = GraphLoader(validation_session, user_id=current_user.id)
@@ -1234,186 +1191,6 @@ async def api_compose(
     }
 
     return JSONResponse(response_payload)
-
-
-@app.get("/graph", response_class=HTMLResponse)
-async def graph(
-    request: Request,
-    current_user: Optional[User] = Depends(get_current_user),
-):
-    if not current_user:
-        return RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
-
-    with Session(engine) as session:
-        user_graph = session.get(UserGraph, current_user.id)
-        if not user_graph:
-            user_graph = UserGraph(user_id=current_user.id)
-            session.add(user_graph)
-            session.commit()
-            session.refresh(user_graph)
-        graph_payload = user_graph.graph or {"nodes": [], "edges": []}
-        graph_json = json.dumps(graph_payload, indent=2)
-        updated_at = user_graph.updated_at.isoformat()
-
-    context = {
-        "request": request,
-        "current_user": current_user,
-        "graph_json": graph_json,
-        "graph_updated_at": updated_at
-    }
-    return templates.TemplateResponse("graph.html", context)
-
-
-@app.get("/api/graph/spec")
-async def api_graph_spec(request: Request) :
-    if not GRAPH_SPEC_PATH.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Specification file not found.",
-        )
-    spec_text = GRAPH_SPEC_PATH.read_text(encoding="utf-8")
-    if request.headers.get("hx-request") == "true":
-        escaped = html.escape(spec_text)
-        content = (
-            "<pre class='max-h-96 overflow-y-auto whitespace-pre-wrap text-xs text-slate-300'>"
-            f"{escaped}"
-            "</pre>"
-        )
-        return HTMLResponse(content)
-    return PlainTextResponse(spec_text)
-
-
-@app.post("/api/graph/validate")
-async def api_graph_validate(
-    request: Request,
-    current_user: User = Depends(require_user),
-    session: Session = Depends(get_session),
-):
-    try:
-        graph_payload, csrf_token = await _extract_graph_payload(request)
-    except ValueError as exc:
-        return JSONResponse(
-            {"ok": False, "errors": [str(exc)]},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
-
-    loader = GraphLoader(session, user_id=current_user.id)
-    result = loader.validate_and_upsert(graph_payload, commit=False)
-    status_code = status.HTTP_200_OK if result.ok else status.HTTP_400_BAD_REQUEST
-    return JSONResponse({"ok": result.ok, "errors": result.errors}, status_code=status_code)
-
-
-@app.post("/api/graph/save")
-async def api_graph_save(
-    request: Request,
-    current_user: User = Depends(require_user),
-    session: Session = Depends(get_session),
-):
-    try:
-        graph_payload, csrf_token = await _extract_graph_payload(request)
-    except ValueError as exc:
-        return JSONResponse(
-            {"ok": False, "errors": [str(exc)]},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
-
-    # Validate JSON size (max 10MB)
-    if isinstance(graph_payload, str):
-        validate_json_size(graph_payload, max_size_mb=10.0)
-
-    loader = GraphLoader(session, user_id=current_user.id)
-    result = loader.validate_and_upsert(graph_payload, commit=True)
-    if not result.ok:
-        return JSONResponse(
-            {"ok": False, "errors": result.errors},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    user_graph = session.get(UserGraph, current_user.id)
-    if not user_graph:
-        user_graph = UserGraph(user_id=current_user.id)
-
-    user_graph.graph = graph_payload
-    user_graph.updated_at = datetime.utcnow()
-    session.add(user_graph)
-    session.commit()
-
-    return JSONResponse(
-        {
-            "ok": True,
-            "errors": [],
-            "updated_at": user_graph.updated_at.isoformat(),
-        }
-    )
-
-
-@app.post("/api/graph/import")
-async def api_graph_import(
-    request: Request,
-    current_user: User = Depends(require_user),
-    session: Session = Depends(get_session),
-):
-    payload: Optional[str] = None
-    csrf_token: Optional[str] = None
-    content_type = request.headers.get("content-type", "")
-    if content_type.startswith("application/json"):
-        body = await request.json()
-        if isinstance(body, dict):
-            csrf_token = body.get("csrf_token")
-            payload = body.get("jsonl")
-        elif isinstance(body, str):
-            payload = body
-    else:
-        form = await request.form()
-        csrf_token = form.get("csrf_token")
-        if "jsonl" in form:
-            payload = str(form["jsonl"])
-
-    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
-
-    if not payload or not payload.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="JSONL payload is empty.",
-        )
-
-    loader = GraphLoader(session, user_id=current_user.id)
-    try:
-        result = loader.load_stream(io.StringIO(payload))
-    except Exception as exc:  # pylint: disable=broad-except
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-
-    if request.headers.get("hx-request") == "true":
-        summary = [
-            "<div class='space-y-2 text-sm text-slate-200'>",
-            f"<p>Inserted nodes: {result.inserted_nodes}</p>",
-            f"<p>Updated nodes: {result.updated_nodes}</p>",
-            f"<p>Skipped nodes: {result.skipped_nodes}</p>",
-            f"<p>Inserted edges: {result.inserted_edges}</p>",
-            f"<p>Updated edges: {result.updated_edges}</p>",
-            f"<p>Skipped edges: {result.skipped_edges}</p>",
-        ]
-        if result.errors:
-            summary.append(
-                "<div class='mt-3 rounded border border-red-500/40 bg-red-500/10 p-3 text-red-200'>"
-            )
-            summary.append("<p class='font-semibold'>Errors</p>")
-            summary.append("<ul class='mt-2 list-disc space-y-1 pl-5'>")
-            for error in result.errors:
-                summary.append(f"<li>{html.escape(error)}</li>")
-            summary.append("</ul></div>")
-        summary.append("</div>")
-        return HTMLResponse("".join(summary))
-
-    return result.to_dict()
-
 
 @app.get("/admin/users")
 async def admin_users(

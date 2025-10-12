@@ -13,3 +13,5 @@ readability-lxml
 openai
 pytest
 pytest-cov
+python-dotenv
+alembic

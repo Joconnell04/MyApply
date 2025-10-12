@@ -86,6 +86,14 @@ pytest --cov=. --cov-report=html
 
 ## 🤖 AgentKit Workflow Integration
 
+To wire up AgentKit in any environment:
+
+1. Set `OPENAI_API_KEY` (and optionally `LLM_MODEL` / `COVER_LETTER_MODEL`) in the deployment environment.
+2. Update the workflow IDs in [`routes.py`](routes.py) so they match the AgentKit workflows you deployed.
+3. Confirm the runtime has outbound network access to OpenAI; the backend calls AgentKit synchronously.
+4. Seed or enter MyLife JSON on the Profile page so the resume builder has data to rank.
+5. Exercise the endpoints below or the Compose UI to verify end-to-end orchestration.
+
 MyApply integrates three AgentKit workflows for automated resume generation:
 
 ### Workflows
@@ -210,6 +218,8 @@ curl -X GET http://localhost:8000/api/runs/{run_id} \
 2. Persists run metadata in `workflow_run` table
 3. Stores artifacts in `artifact` table
 4. Passes outputs from one workflow as inputs to another
+
+> **Note:** Until the public AgentKit Workflow Runs SDK is available, `agentkit.py` proxies each call through `chat.completions` with `response_format="json_object"` to emulate workflow behavior.
 
 ---
 

@@ -26,7 +26,8 @@ MyApply is a FastAPI-powered platform that combines structured experience graphs
 - **Admin Panel** - User and run management
 
 ### 📝 Experience Graph
-- **JSON/JSONL Editor** - Structured experience data storage
+- **Profile-based JSON editor** - Manage the MyLife graph directly from the Profile page with inline formatting helpers
+- **Append helper** - Merge new JSON snippets safely with automatic pretty-printing
 - **Graph Validation** - Schema enforcement for nodes and edges
 - **Fact Ranking** - Score experiences against job requirements
 - **Evidence Retrieval** - Query system for experience matching
@@ -83,13 +84,19 @@ pip install -r requirements.txt
 
 # Configure
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and set at least OPENAI_API_KEY and DATABASE_URL
 
 # Run
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 # Visit http://127.0.0.1:8000
 ```
+
+### Database Configuration
+
+- Set `DATABASE_URL` in `.env`; the default `sqlite:///./myapply.db` stores a SQLite file in the project root.
+- For PostgreSQL use `postgresql+psycopg://username:password@localhost:5432/myapply` (requires `psycopg[binary]`).
+- Alembic reads the same `DATABASE_URL`, so export it or run commands with `.env` loaded before invoking `alembic upgrade head`.
 
 ### Create Admin User
 
@@ -104,6 +111,26 @@ pytest -v                              # All tests
 pytest tests/test_agentkit_routes.py  # AgentKit tests only
 pytest --cov=. --cov-report=html      # With coverage
 ```
+
+---
+
+## 🤝 AgentKit Setup
+
+1. **Configure credentials**
+   - Set `OPENAI_API_KEY` in your `.env` file (copy `.env.example` as a starter).
+   - Optionally override `LLM_MODEL` and `COVER_LETTER_MODEL` if you prefer different OpenAI models.
+2. **Map workflow IDs**
+   - The backend orchestrator calls three AgentKit workflows. Update the IDs in [`routes.py`](routes.py) under `WORKFLOW_INTENT_ROUTER`, `WORKFLOW_JD_TO_STRUCTURED`, and `WORKFLOW_RESUME_BUILDER` to match your AgentKit deployments.
+3. **Start the app and sign in**
+   - Run `uvicorn app:app --reload`, register or log in, and populate your Profile → MyLife JSON so the composer has data to work with.
+4. **Trigger the workflows**
+   - Use the Compose UI or call the REST endpoints (`/api/intent/route`, `/api/jd/structure`, `/api/resume/build`) with an authenticated session. Example `curl` commands are provided below.
+   - Run `pytest tests/test_agentkit_routes.py` for a quick smoke test.
+5. **Troubleshoot connectivity**
+   - Ensure outbound network access to OpenAI from your environment.
+   - Check server logs for `Workflow execution failed` messages; the error payload will tell you whether the AgentKit call or JSON parsing failed.
+
+> ℹ️ The interim `agentkit.py` wrapper currently uses `chat.completions` with `response_format="json_object"` to simulate AgentKit Workflow Runs until the official SDK is public.
 
 ---
 
@@ -209,7 +236,7 @@ MyApply/
 ├── validation.py               # Input sanitization
 ├── graph/                      # Experience graph system
 │   ├── schema.py              # Node/edge types & validation
-│   ├── loader.py              # JSONL import & graph management
+│   ├── loader.py              # Graph validation & management helpers
 │   └── scoring.py             # Fact ranking algorithms
 ├── myapply_tools/             # AgentKit tool service
 │   ├── app.py                 # Tool API FastAPI app
@@ -262,13 +289,13 @@ PORT=8000                                     # Server port
 
 ### Core Tables
 
-- **`user`** - User accounts with auth & profile data
+- **`user`** - User accounts, profile details, and `mylife_json` experience graph
 - **`workflow_run`** - AgentKit workflow execution metadata
 - **`artifact`** - Workflow output artifacts (structured JDs, resume sections)
 - **`job_applied`** - Job application history
 - **`job_location`** - Multi-location support with geocoding
 - **`compose_run`** - LLM compose run history & token usage
-- **`user_graph`** - User experience graphs (JSON storage)
+- **`user_graph`** - Legacy snapshot table (unused by UI; retained for backfills)
 - **`nodes`** - Graph nodes (tasks, projects, skills, etc.)
 - **`edges`** - Graph relationships with temporal bounds
 
@@ -293,7 +320,7 @@ alembic upgrade head
 - ✅ Profile & job application APIs
 - ✅ AgentKit workflow orchestration
 - ✅ Locations array serialization
-- ✅ Graph validation & JSONL import
+- ✅ Graph validation pipeline powering fact ranking
 - ✅ Bundle storage with TTL expiry
 - ✅ Evidence retrieval & pagination
 

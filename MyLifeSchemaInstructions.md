@@ -301,11 +301,11 @@ Can also be represented as an object with `nodes` and `edges` arrays:
 
 ## Usage in MyApply
 
-1. **Graph Editor** (`/graph`): Users build and edit their graph via JSONEditor
-2. **Validation** (`/api/graph/validate`): Dry-run validation before save
-3. **Persistence** (`/api/graph/save`): Save to database with user ownership
-4. **Ranking** (`rank_facts`): Score task nodes against job description factors
-5. **Generation** (LLM pipeline): Use top-ranked facts to create resume bullets and cover letters
+1. **Profile Editor** (`/profile`): Manage the MyLife graph JSON directly with inline formatting and append helpers.
+2. **Inline Formatting**: The `Format JSON` and `Add Section` actions keep the stored graph tidy without leaving the profile.
+3. **Validation** (`GraphLoader`): The compose pipeline validates the graph before ranking facts.
+4. **Ranking** (`rank_facts`): Score task nodes against job description factors.
+5. **Generation** (LLM pipeline): Use top-ranked facts to create resume bullets and cover letters.
 
 ## Best Practices
 

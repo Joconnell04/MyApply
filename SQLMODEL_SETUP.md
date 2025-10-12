@@ -59,7 +59,7 @@ All SQLModel models are defined in [models.py](models.py). Here's the structure:
 1. **User** ([models.py:19](models.py#L19)) - User accounts and authentication
 2. **GraphNode** ([models.py:36](models.py#L36)) - Knowledge graph nodes
 3. **GraphEdge** ([models.py:63](models.py#L63)) - Knowledge graph edges
-4. **UserGraph** ([models.py:93](models.py#L93)) - User's serialized graph data
+4. **UserGraph** ([models.py:93](models.py#L93)) - Legacy serialized graph snapshots (UI now writes to `User.mylife_json`)
 5. **ComposeRun** ([models.py:102](models.py#L102)) - Resume/cover letter generation runs
 6. **JobApplied** ([models.py:142](models.py#L142)) - Job applications
 7. **JobLocation** ([models.py:157](models.py#L157)) - Job location data
@@ -110,21 +110,23 @@ SQLModel.metadata.create_all(engine)
 
 ### Database Migrations
 
-For production deployments, consider using Alembic for migrations:
+✅ **Alembic is configured and ready to use!** See [ALEMBIC_SETUP.md](ALEMBIC_SETUP.md) for detailed instructions.
 
 ```bash
-# Install Alembic
-pip install alembic
-
-# Initialize Alembic
-alembic init alembic
-
-# Create a migration
-alembic revision --autogenerate -m "Initial migration"
+# Create a migration (auto-generate from model changes)
+alembic revision --autogenerate -m "Description of changes"
 
 # Apply migrations
 alembic upgrade head
+
+# Rollback migrations
+alembic downgrade -1
+
+# Check current migration status
+alembic current
 ```
+
+**Important**: Always review auto-generated migrations before applying them!
 
 ## Database Operations
 
