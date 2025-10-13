@@ -120,7 +120,7 @@ pytest --cov=. --cov-report=html      # With coverage
    - Set `OPENAI_API_KEY` in your `.env` file (copy `.env.example` as a starter).
    - Optionally override `LLM_MODEL` and `COVER_LETTER_MODEL` if you prefer different OpenAI models.
 2. **Map workflow IDs**
-   - The backend orchestrator calls two AgentKit workflows. Update the IDs in [`workflow_constants.py`](workflow_constants.py) to match your AgentKit deployments.
+   - The backend orchestrator calls the all-in-one `ResumeBuilderV2` AgentKit workflow. Update the ID in [`workflow_constants.py`](workflow_constants.py) to match your AgentKit deployment.
 3. **Start the app and sign in**
    - Run `uvicorn app:app --reload`, register or log in, and populate your Profile → MyLife JSON so the composer has data to work with.
 4. **Trigger the workflows**
@@ -130,15 +130,15 @@ pytest --cov=. --cov-report=html      # With coverage
    - Ensure outbound network access to OpenAI from your environment.
    - Check server logs for `Workflow execution failed` messages; the error payload will tell you whether the AgentKit call or JSON parsing failed.
 
-> ℹ️ The backend now uses the OpenAI Workflows API via `services/openai_workflows.py` for both phases with synchronous polling.
+> ℹ️ The backend uses the OpenAI Workflows API via `services/openai_workflows.py` with synchronous polling for the ResumeBuilderV2 flow.
 
 ---
 
 ## 🤖 Workflow API Endpoints
 
-### Phase 1 — Ingest Job Description URL
+Both endpoints call the single ResumeBuilderV2 workflow. `/api/jd/ingest` caches the structured job data (and downstream artifacts) while `/api/resume/build` surfaces the resume bullets and cover letter, reusing cached output when available.
 
-Fetch a job posting, run the `JD_to_StructuredJD_v0` workflow, and persist its output.
+### JD Ingest — Structured Job Data
 
 ```bash
 POST /api/jd/ingest
@@ -161,18 +161,14 @@ curl -X POST http://localhost:8000/api/jd/ingest \
   "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
   "jd_status": "succeeded",
   "jd_struct_data": {
-    "title": "Senior Python Developer",
-    "locations": [
-      {"city": "San Francisco", "region": "CA", "type": "hybrid"}
-    ],
-    "skills": {"must_have": ["Python", "FastAPI"]}
+    "required_skills": ["Python", "FastAPI"],
+    "locations": ["Remote"],
+    "required_experience": ["5+ years building APIs"]
   }
 }
 ```
 
-### Phase 2 — Build Tailored Resume
-
-Use the stored structured JD to call `Resume_Builder_v1` and persist the generated bullets and packaging.
+### ResumeBuilderV2 — Resume + Cover Letter
 
 ```bash
 POST /api/resume/build
@@ -186,24 +182,36 @@ curl -X POST http://localhost:8000/api/resume/build \
   -d '{
     "user_id": "user-123",
     "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
-    "target_role": "Backend Engineer"
+    "job_url": "https://example.com/jobs/senior-python"
   }'
 ```
 
-**Response (truncated):**
+**Response:**
 ```json
 {
   "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
   "resume_status": "succeeded",
+  "structured_job_data": {
+    "required_skills": ["Python", "FastAPI"],
+    "locations": ["Remote"],
+    "required_experience": ["5+ years building APIs"]
+  },
+  "resume_bullets": [
+    "Engineered scalable APIs in Python, delivering features for [user base size] clients.",
+    "Mentored cross-functional teams while implementing async FastAPI services."
+  ],
+  "cover_letter": "I am excited to apply my FastAPI expertise to this role.",
   "resume_output": {
-    "output_parsed": {
-      "bullets": [
-        "Scaled async APIs handling 50M+ daily calls by modernising FastAPI services.",
-        "Led cross-functional initiative to harden Python platform security and observability."
-      ],
-      "package": {"summary": "..."}
-    },
-    "output_text": "Generated resume bullets..."
+    "resume_bullets": [
+      "Engineered scalable APIs in Python, delivering features for [user base size] clients.",
+      "Mentored cross-functional teams while implementing async FastAPI services."
+    ],
+    "cover_letter": "I am excited to apply my FastAPI expertise to this role.",
+    "structured_job_data": {
+      "required_skills": ["Python", "FastAPI"],
+      "locations": ["Remote"],
+      "required_experience": ["5+ years building APIs"]
+    }
   }
 }
 ```

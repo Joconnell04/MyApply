@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+gunicorn
 jinja2
 sqlmodel
 passlib[bcrypt]
@@ -15,3 +16,4 @@ pytest
 pytest-cov
 python-dotenv
 alembic
+psycopg2-binary

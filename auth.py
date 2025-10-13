@@ -194,9 +194,22 @@ def logout(request: Request) -> None:
     request.session.pop("uid", None)
 
 
-def create_admin_user(db: Session, *, email: str, password: str) -> User:
+def create_admin_user(
+    db: Session,
+    *,
+    email: str,
+    password: str,
+    enforce_password_strength: bool = True,
+) -> User:
     normalized_email = _normalize_email(email)
-    _validate_password_strength(password)
+    if enforce_password_strength:
+        _validate_password_strength(password)
+    else:
+        if len(password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 8 characters long.",
+            )
     existing = db.exec(select(User).where(User.email == normalized_email)).first()
     if existing:
         raise HTTPException(

@@ -1,0 +1,42 @@
+# Railway Environment Variables Template
+# Copy these to your Railway service settings
+
+# === REQUIRED ===
+
+# Database (set automatically by Railway Postgres plugin)
+DATABASE_URL=postgresql://postgres:cFrOJOrnwXQfQKVUAnkNwPYPronyPyMq@postgres.railway.internal:5432/railway
+
+# Security & Sessions
+SECRET_KEY=3248c4e924f7917a0e9fc42cd544c442599722a9884a074af43181abd90eb04f
+SESSION_COOKIE_NAME=app_session
+SESSION_SECURE=true
+SESSION_SAMESITE=lax
+
+# Environment
+ENV=production
+PORT=8000
+
+# OpenAI
+OPENAI_API_KEY=sk-proj-[REDACTED]
+LLM_MODEL=gpt-4o-mini
+COVER_LETTER_MODEL=gpt-4o
+
+# ChatKit (if using)
+CHATKIT_DOMAIN=production.up.railway.app
+CHATKIT_DOMAIN_PUBLIC_KEY=domain_pk_68ebf83e58ec8190a2bc239b475fd88e0fe2738197866eed
+
+# MyApply API Key
+MYAPPLY_API_KEY=prod_key_[GENERATE_NEW_VALUE]
+
+# === OPTIONAL ===
+
+# Mapbox (for map features)
+MAPBOX_PUBLIC_TOKEN=pk.eyJ1Ijoib2NvMjciLCJhIjoiY21nbnpzbjd6MDhrYjJqcTQ3bHUwM3hjdCJ9.bCAYMbuiT4aC26mffnKa4w
+MAPBOX_ACCESS_TOKEN=pk.eyJ1Ijoib2NvMjciLCJhIjoiY21nbnp1NnRoMTdnZDJqcHl6b24yZ3A5YyJ9.BmZv4gsFiXaHeZX4fiyg7w
+
+# CORS (Railway domain will be added automatically)
+ALLOWED_ORIGINS=https://myapply-production.up.railway.app
+
+# Admin User (for initial setup)
+ADMIN_EMAIL=Jt272004@gmail.com
+ADMIN_PASSWORD=[SET_IN_RAILWAY_SECURELY]

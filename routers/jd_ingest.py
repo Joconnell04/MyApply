@@ -10,16 +10,21 @@ from sqlmodel import Session
 from app import get_session
 from applications import JobApplication
 from services.openai_workflows import run_workflow
+from services.workflow_output_parser import parse_resume_builder_result
 from validation import validate_url
-from workflow_constants import WORKFLOW_JD_TO_STRUCT_ID, WORKFLOW_JD_TO_STRUCT_VER
-from .utils import SUCCESS_STATUSES, ensure_user_id, to_dict, try_parse_json_text
+from workflow_constants import (
+    WORKFLOW_RESUME_BUILDER_V2_ID,
+    WORKFLOW_RESUME_BUILDER_V2_VER,
+)
+from .utils import SUCCESS_STATUSES, ensure_user_id, to_dict
 
 router = APIRouter()
 
 
 class JDIngestRequest(BaseModel):
-    source_url: str = Field(..., min_length=5, max_length=2048)
     user_id: str = Field(..., min_length=1, max_length=255)
+    source_url: str = Field(..., min_length=5, max_length=2048)
+    application_id: Optional[str] = Field(default=None, min_length=1)
 
     model_config = {"extra": "forbid"}
 
@@ -30,90 +35,105 @@ class JDIngestResponse(BaseModel):
     jd_struct_data: Optional[Dict[str, Any]] = None
 
 
-def _extract_structured_jd(run: Any) -> Dict[str, Any]:
-    run_output = getattr(run, "output", None)
-    output_dict = to_dict(run_output) or to_dict(run)
-
-    structured = None
-    if output_dict:
-        structured = output_dict.get("output_parsed") or output_dict.get("jd_struct_data")
-        if structured is None:
-            output_text = output_dict.get("output_text")
-            if isinstance(output_text, str):
-                structured = try_parse_json_text(output_text)
-    if structured is None:
-        output_text = getattr(run, "output_text", None)
-        if isinstance(output_text, str):
-            structured = try_parse_json_text(output_text)
-
-    if structured is None:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="JD workflow returned no structured data.",
-        )
-    if not isinstance(structured, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="JD workflow returned invalid structured data.",
-        )
-    return structured
-
-
 @router.post("/ingest", response_model=JDIngestResponse)
 def ingest_job_description(
     payload: JDIngestRequest,
     session: Session = Depends(get_session),
 ) -> JDIngestResponse:
-    source_url = validate_url(payload.source_url)
     user_id = ensure_user_id(payload.user_id)
+    job_url = validate_url(payload.source_url)
 
-    job_app = JobApplication(
-        user_id=user_id,
-        source_url=source_url,
-        jd_status="running",
-    )
+    if payload.application_id:
+        job_app = session.get(JobApplication, payload.application_id)
+        if not job_app:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found.",
+            )
+        if job_app.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Application does not belong to user.",
+            )
+        job_app.source_url = job_url
+    else:
+        job_app = JobApplication(
+            user_id=user_id,
+            source_url=job_url,
+        )
+
+    job_app.jd_status = "running"
+    job_app.resume_status = job_app.resume_status or "idle"
+    job_app.updated_at = datetime.utcnow()
     session.add(job_app)
     session.commit()
     session.refresh(job_app)
 
     try:
         run = run_workflow(
-            workflow_id=WORKFLOW_JD_TO_STRUCT_ID,
-            version=WORKFLOW_JD_TO_STRUCT_VER,
-            inputs={"source_url": source_url},
+            workflow_id=WORKFLOW_RESUME_BUILDER_V2_ID,
+            version=WORKFLOW_RESUME_BUILDER_V2_VER,
+            inputs={"input_as_text": job_url},
+            db_session=session,
+            application_id=job_app.id,
         )
     except HTTPException:
         job_app.jd_status = "failed"
+        job_app.resume_status = "failed"
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
         raise
     except Exception as exc:  # pragma: no cover - defensive
         job_app.jd_status = "failed"
+        job_app.resume_status = "failed"
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"JD workflow failed: {exc}",
+            detail=f"ResumeBuilderV2 workflow failed: {exc}",
         ) from exc
 
     run_dict = to_dict(run) or {}
     status_value = getattr(run, "status", None) or run_dict.get("status")
     if status_value and str(status_value).lower() not in SUCCESS_STATUSES:
         job_app.jd_status = "failed"
+        job_app.resume_status = "failed"
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"JD workflow returned status {status_value}",
+            detail=f"ResumeBuilderV2 workflow returned status {status_value}",
         )
 
-    job_app.jd_run_id = getattr(run, "id", None) or run_dict.get("id") or job_app.jd_run_id
-    job_app.jd_struct_data = _extract_structured_jd(run)
+    run_id = getattr(run, "id", None) or run_dict.get("id")
+    parsed_output, structured_job, resume_bullets, cover_letter = parse_resume_builder_result(run)
+    if structured_job is None:
+        job_app.jd_status = "failed"
+        job_app.resume_status = "failed"
+        job_app.updated_at = datetime.utcnow()
+        session.add(job_app)
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="ResumeBuilderV2 workflow returned no structured job data.",
+        )
+
+    job_app.jd_run_id = run_id or job_app.jd_run_id
+    job_app.jd_struct_data = structured_job
     job_app.jd_status = "succeeded"
+    job_app.resume_run_id = run_id or job_app.resume_run_id
+    job_app.resume_output = parsed_output
+    job_app.resume_status = "idle"
     job_app.updated_at = datetime.utcnow()
+
+    # Preserve generated bullets & cover letter for later use without exposing them in this response
+    if resume_bullets:
+        job_app.resume_output.setdefault("resume_bullets", resume_bullets)
+    if cover_letter:
+        job_app.resume_output.setdefault("cover_letter", cover_letter)
 
     session.add(job_app)
     session.commit()

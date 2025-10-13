@@ -2,8 +2,6 @@
 Constants for OpenAI AgentKit workflow identifiers used in MyApply.
 """
 
-WORKFLOW_JD_TO_STRUCT_ID = "wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546"
-WORKFLOW_JD_TO_STRUCT_VER = "4"
-WORKFLOW_RESUME_BUILDER_ID = "wf_68e969c7da408190b3d046774e86e50700467750faf0f87a"
-WORKFLOW_RESUME_BUILDER_VER = "4"
-
+# ResumeBuilderV2 is the single workflow orchestrating scraping and resume generation.
+WORKFLOW_RESUME_BUILDER_V2_ID = "wf_68ec6800d1948190a0629c0eaf07f8e303633b84fcb85ab9"
+WORKFLOW_RESUME_BUILDER_V2_VER = "1"

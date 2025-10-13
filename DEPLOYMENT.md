@@ -89,27 +89,24 @@ pytest --cov=. --cov-report=html
 To wire up AgentKit in any environment:
 
 1. Set `OPENAI_API_KEY` (and optionally `ENV`, `LLM_MODEL`, `COVER_LETTER_MODEL`) in the deployment environment.
-2. Update the workflow IDs in [`workflow_constants.py`](workflow_constants.py) so they match the AgentKit workflows you deployed.
+2. Update the workflow ID in [`workflow_constants.py`](workflow_constants.py) so it matches the AgentKit deployment for `ResumeBuilderV2`.
 3. Confirm the runtime has outbound network access to OpenAI; the backend calls the Workflows API synchronously.
 4. Seed or enter MyLife JSON on the Profile page so the resume builder has data to rank.
 5. Exercise the endpoints below or the Compose UI to verify end-to-end orchestration.
 
-MyApply orchestrates two AgentKit workflows for automated resume generation:
+MyApply orchestrates a single AgentKit workflow (`ResumeBuilderV2`) for automated resume and cover-letter generation.
 
-### Workflows
+### Workflow
 
 | Workflow | ID | Version | Purpose |
 |----------|----|---------|---------|
-| **JD_to_StructuredJD_v0** | `wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546` | 4 | Parse & structure job descriptions |
-| **Resume_Builder_v1** | `wf_68e969c7da408190b3d046774e86e50700467750faf0f87a` | 4 | Build tailored resumes from structured JD |
+| **ResumeBuilderV2** | `wf_68ec6800d1948190a0629c0eaf07f8e303633b84fcb85ab9` | 1 | Scrape job URL, structure requirements, and draft tailored resume bullets & cover letter |
 
 ### REST API Endpoints
 
-#### 1. Phase 1 — Ingest Job Description URL
+#### `/api/jd/ingest` — Structured Job Data
 
-**Endpoint:** `POST /api/jd/ingest`
-
-Fetches a job posting URL, runs `JD_to_StructuredJD_v0`, and stores both the structured data and workflow metadata.
+Runs `ResumeBuilderV2` to scrape the job posting, persists the structured job data, and caches resume artifacts for later retrieval.
 
 ```bash
 curl -X POST http://localhost:8000/api/jd/ingest \
@@ -121,27 +118,22 @@ curl -X POST http://localhost:8000/api/jd/ingest \
   }'
 ```
 
-**Response:**
+**Response (truncated):**
 ```json
 {
   "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
   "jd_status": "succeeded",
   "jd_struct_data": {
-    "title": "Senior Python Developer",
-    "company_name": "...",
-    "locations": [
-      {"city": "San Francisco", "region": "CA", "country": "USA", "type": "hybrid"}
-    ],
-    "skills": {"must_have": ["Python", "FastAPI", "PostgreSQL"]}
+    "required_skills": ["Python", "FastAPI"],
+    "locations": ["Remote"],
+    "required_experience": ["5+ years building APIs"]
   }
 }
 ```
 
-#### 2. Phase 2 — Build Tailored Resume
+#### `/api/resume/build` — Resume + Cover Letter
 
-**Endpoint:** `POST /api/resume/build`
-
-Runs `Resume_Builder_v1` using the stored structured JD and persists the generated bullets and packaging.
+Returns the cached resume artifacts (or re-runs the workflow if missing), keeping the API compatible with the previous two-step flow.
 
 ```bash
 curl -X POST http://localhost:8000/api/resume/build \
@@ -150,7 +142,7 @@ curl -X POST http://localhost:8000/api/resume/build \
   -d '{
     "user_id": "user-123",
     "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
-    "target_role": "Backend Engineer"
+    "job_url": "https://example.com/jobs/senior-python"
   }'
 ```
 
@@ -160,27 +152,28 @@ curl -X POST http://localhost:8000/api/resume/build \
   "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
   "resume_status": "succeeded",
   "resume_output": {
-    "output_parsed": {
-      "bullets": [
-        "Scaled async APIs handling 50M+ daily calls by modernising FastAPI services.",
-        "Led cross-functional initiative to harden Python platform security and observability."
-      ],
-      "package": {"summary": "..."}
+    "structured_job_data": {
+      "required_skills": ["Python", "FastAPI"],
+      "locations": ["Remote"]
     },
-    "output_text": "Generated resume bullets..."
+    "resume_bullets": [
+      "Engineered scalable APIs in Python, delivering features for [user base size] clients.",
+      "Mentored cross-functional teams while implementing async FastAPI services."
+    ],
+    "cover_letter": "I am excited to apply my FastAPI expertise to this role."
   }
 }
 ```
 
 ### Architecture
 
-**Backend as Conductor:** Workflows do NOT call each other. The backend:
+**Backend as Conductor:** The backend:
 1. Calls workflows synchronously via `services/openai_workflows.py`
 2. Persists job application state in `JobApplication`
 3. Stores all workflow metadata in `workflow_run` and artifacts if you extend the schema
-4. Passes outputs from one workflow as inputs to another
+4. Reuses cached ResumeBuilderV2 output when `/api/resume/build` is called after `/api/jd/ingest`
 
-> **Note:** The backend now uses the official OpenAI Workflows API to run both phases and polls until completion.
+> **Note:** The backend uses the official OpenAI Workflows API to run ResumeBuilderV2 and polls until completion.
 
 ---
 

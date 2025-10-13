@@ -15,7 +15,9 @@
       "Bash(alembic revision:*)",
       "Bash(alembic current:*)",
       "Bash(alembic:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(sqlite3:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

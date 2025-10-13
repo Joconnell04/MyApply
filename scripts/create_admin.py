@@ -22,7 +22,12 @@ def main() -> None:
 
     with Session(engine) as session:
         try:
-            user = create_admin_user(session, email=email, password=password)
+            user = create_admin_user(
+                session,
+                email=email,
+                password=password,
+                enforce_password_strength=False,
+            )
         except HTTPException as exc:
             print(f"Error: {exc.detail}")
             sys.exit(1)

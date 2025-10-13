@@ -34,7 +34,7 @@ from auth import (
 from graph.loader import GraphLoader, parse_graph_payload
 from graph.scoring import rank_facts
 from llm import LLMPipeline
-from models import ComposeRun, JobApplied, JobLocation, User
+from models import APIDebugLog, ComposeRun, JobApplied, JobLocation, User
 from validation import sanitize_string, validate_json_size, validate_url
 
 
@@ -93,7 +93,21 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+# Database engine configuration with SSL support for Railway Postgres
+def _get_engine_connect_args(db_url: str) -> dict:
+    """
+    Determine connect_args based on database URL.
+    - SQLite: add check_same_thread=False
+    - Postgres with proxy.rlwy.net: add sslmode=require
+    - Other Postgres: no special connect_args needed
+    """
+    if db_url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    elif "proxy.rlwy.net" in db_url:
+        return {"sslmode": "require"}
+    return {}
+
+connect_args = _get_engine_connect_args(settings.DATABASE_URL)
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 
 app = FastAPI(title="MyApply")
@@ -485,6 +499,37 @@ async def internal_error_handler(request: Request, exc: Exception):
         {"request": request, "status_code": 500, "message": None, "detail": None},
         status_code=500
     )
+
+
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint."""
+    return {"status": "healthy", "service": "MyApply"}
+
+
+@app.get("/health/db")
+async def health_check_db(session: Session = Depends(get_session)):
+    """Database health check - verifies DB connectivity."""
+    try:
+        # Execute a simple query to verify database connection
+        result = session.exec(select(1)).first()
+        if result == 1:
+            return {"status": "healthy", "database": "connected"}
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unhealthy", "database": "query_failed"}
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unhealthy", "database": "error", "detail": str(exc)}
+        )
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Redirect favicon.ico requests to the SVG favicon."""
+    return RedirectResponse(url="/static/favicon.svg", status_code=status.HTTP_301_MOVED_PERMANENTLY)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1002,6 +1047,23 @@ async def compose(
         "request": request,
         "current_user": current_user
     }
+    # Use the new workflow-integrated compose page
+    return templates.TemplateResponse("compose_workflow.html", context)
+
+
+@app.get("/compose/legacy", response_class=HTMLResponse)
+async def compose_legacy(
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user),
+):
+    """Legacy compose endpoint using LLM pipeline (for backwards compatibility)."""
+    if not current_user:
+        return RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
+
+    context = {
+        "request": request,
+        "current_user": current_user
+    }
     return templates.TemplateResponse("compose.html", context)
 
 
@@ -1281,3 +1343,101 @@ async def delete_run(
     session.commit()
 
     return JSONResponse({"ok": True, "message": "Run deleted successfully."})
+
+
+@app.get("/api/runs/{run_id}/debug-logs")
+async def get_run_debug_logs(
+    run_id: int,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Get debug logs for a specific compose run."""
+    from models import APIDebugLog
+
+    run = session.get(ComposeRun, run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found.",
+        )
+
+    if run.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own run logs.",
+        )
+
+    # Get all debug logs for this run
+    logs = session.exec(
+        select(APIDebugLog)
+        .where(APIDebugLog.compose_run_id == run_id)
+        .order_by(APIDebugLog.created_at.asc())
+    ).all()
+
+    log_entries = [
+        {
+            "id": log.id,
+            "log_type": log.log_type,
+            "endpoint": log.endpoint,
+            "method": log.method,
+            "status_code": log.status_code,
+            "request_data": log.request_data,
+            "response_data": log.response_data,
+            "error_message": log.error_message,
+            "duration_ms": log.duration_ms,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]
+
+    return JSONResponse({"ok": True, "logs": log_entries})
+
+
+@app.get("/api/applications/{application_id}/debug-logs")
+async def get_application_debug_logs(
+    application_id: str,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Get debug logs for a specific job application (workflow-based)."""
+    from applications import JobApplication
+    from models import APIDebugLog
+
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    # Check if user owns this application
+    if str(app_record.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own application logs.",
+        )
+
+    # Get all debug logs for this application
+    logs = session.exec(
+        select(APIDebugLog)
+        .where(APIDebugLog.application_id == application_id)
+        .order_by(APIDebugLog.created_at.asc())
+    ).all()
+
+    log_entries = [
+        {
+            "id": log.id,
+            "log_type": log.log_type,
+            "endpoint": log.endpoint,
+            "method": log.method,
+            "status_code": log.status_code,
+            "request_data": log.request_data,
+            "response_data": log.response_data,
+            "error_message": log.error_message,
+            "duration_ms": log.duration_ms,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]
+
+    return JSONResponse({"ok": True, "logs": log_entries})

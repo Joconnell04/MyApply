@@ -209,3 +209,29 @@ class Artifact(SQLModel, table=True):
     label: Optional[str] = Field(default=None)
     payload_json: Dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
+class APIDebugLog(SQLModel, table=True):
+    """
+    Stores debug logs for API calls (FastAPI endpoints and OpenAI AgentKit workflows).
+    Used for debugging and troubleshooting workflow executions.
+    """
+    __tablename__ = "api_debug_log"
+    __table_args__ = (
+        Index("ix_api_debug_log_compose_run_id", "compose_run_id"),
+        Index("ix_api_debug_log_application_id", "application_id"),
+        Index("ix_api_debug_log_created_at", "created_at"),
+    )
+
+    id: str = Field(default_factory=lambda: uuid4().hex, primary_key=True)
+    compose_run_id: Optional[int] = Field(default=None, foreign_key="composerun.id")
+    application_id: Optional[str] = Field(default=None, foreign_key="jobapplication.id")
+    log_type: str = Field(nullable=False)  # "fastapi_request", "fastapi_response", "agentkit_call", "agentkit_response"
+    endpoint: Optional[str] = Field(default=None)
+    method: Optional[str] = Field(default=None)
+    status_code: Optional[int] = Field(default=None)
+    request_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    response_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    error_message: Optional[str] = Field(default=None)
+    duration_ms: Optional[float] = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)

@@ -1,47 +1,54 @@
 from __future__ import annotations
-
+import json
 from types import SimpleNamespace
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 from workflow_constants import (
-    WORKFLOW_JD_TO_STRUCT_ID,
-    WORKFLOW_JD_TO_STRUCT_VER,
-    WORKFLOW_RESUME_BUILDER_ID,
-    WORKFLOW_RESUME_BUILDER_VER,
+    WORKFLOW_RESUME_BUILDER_V2_ID,
+    WORKFLOW_RESUME_BUILDER_V2_VER,
 )
 
 
-def test_two_phase_workflow_success(monkeypatch, test_client):
+def test_resume_builder_v2_ingest_and_resume(monkeypatch, test_client):
     client, app_module = test_client
     from applications import JobApplication
 
-    jd_payload = {"title": "Senior AI Engineer", "company": "OpenAI"}
-    resume_payload = {"bullets": ["Delivered high-impact AI systems."], "package": {"summary": "Tailored resume"}}
+    structured_payload = {
+        "required_skills": ["Python", "FastAPI"],
+        "nice_to_have_skills": ["SQLModel"],
+        "required_experience": ["5+ years building APIs"],
+        "locations": ["Remote"],
+        "desired_skills": ["Async programming"],
+        "other_noteworthy": ["Experience with workflows"],
+    }
+    resume_bullets = [
+        "Engineered scalable APIs in Python, delivering features for [user base size] clients.",
+        "Mentored cross-functional teams while implementing async FastAPI services.",
+    ]
+    cover_letter = "I am excited to apply my FastAPI expertise to this role."
 
-    captured_inputs: list[tuple[str, dict]] = []
+    run_calls: list[tuple[str, dict]] = []
 
-    def fake_run_workflow(workflow_id: str, version: str, inputs: dict):
-        captured_inputs.append((workflow_id, inputs))
-        if workflow_id == WORKFLOW_JD_TO_STRUCT_ID:
-            assert version == WORKFLOW_JD_TO_STRUCT_VER
-            assert "source_url" in inputs
-            return SimpleNamespace(
-                id="jd-run-123",
-                status="succeeded",
-                output={"output_parsed": jd_payload},
-            )
-        if workflow_id == WORKFLOW_RESUME_BUILDER_ID:
-            assert version == WORKFLOW_RESUME_BUILDER_VER
-            assert inputs.get("jd_struct_data") == jd_payload
-            return SimpleNamespace(
-                id="resume-run-456",
-                status="succeeded",
-                output={
-                    "output_parsed": resume_payload,
-                    "output_text": "Generated resume bullets",
-                },
-            )
-        raise AssertionError(f"Unexpected workflow {workflow_id}")
+    def fake_run_workflow(workflow_id: str, version: str, inputs: dict, **kwargs):
+        run_calls.append((workflow_id, inputs))
+        assert workflow_id == WORKFLOW_RESUME_BUILDER_V2_ID
+        assert version == WORKFLOW_RESUME_BUILDER_V2_VER
+        assert inputs.get("input_as_text") == "https://example.com/job"
+        return SimpleNamespace(
+            id="resume-v2-run-789",
+            status="completed",
+            output={
+                "job_scraper_result": {"output_parsed": structured_payload},
+                "output_text": json.dumps(
+                    {
+                        "reasoning": "Planned bullets around API delivery and mentorship.",
+                        "plan": ["API impact", "Team leadership"],
+                        "resume_bullet_points": resume_bullets,
+                        "cover_letter": cover_letter,
+                    }
+                ),
+            },
+        )
 
     monkeypatch.setattr("services.openai_workflows.run_workflow", fake_run_workflow)
     monkeypatch.setattr("routers.jd_ingest.run_workflow", fake_run_workflow)
@@ -52,35 +59,50 @@ def test_two_phase_workflow_success(monkeypatch, test_client):
         json={"user_id": "test-user", "source_url": "https://example.com/job"},
     )
     assert ingest_response.status_code == 200
-    body = ingest_response.json()
-    assert body["jd_status"] == "succeeded"
-    assert body["jd_struct_data"] == jd_payload
-    application_id = body["application_id"]
+    ingest_body = ingest_response.json()
+    assert ingest_body["jd_status"] == "succeeded"
+    assert ingest_body["jd_struct_data"] == structured_payload
+    application_id = ingest_body["application_id"]
+
+    assert len(run_calls) == 1
+    assert run_calls[0][0] == WORKFLOW_RESUME_BUILDER_V2_ID
+
+    with Session(app_module.engine) as session:
+        db_app = session.get(JobApplication, application_id)
+        assert db_app is not None
+        assert db_app.jd_status == "succeeded"
+        assert db_app.resume_status == "idle"
+        assert db_app.jd_struct_data == structured_payload
+        assert db_app.resume_output["resume_bullets"] == resume_bullets
+        assert db_app.resume_output["cover_letter"] == cover_letter
 
     resume_response = client.post(
         "/api/resume/build",
         json={
             "user_id": "test-user",
             "application_id": application_id,
-            "target_role": "Staff AI Engineer",
+            "job_url": "https://example.com/job",
         },
     )
     assert resume_response.status_code == 200
     resume_body = resume_response.json()
     assert resume_body["resume_status"] == "succeeded"
-    assert resume_body["resume_output"]["output_parsed"] == resume_payload
+    assert resume_body["structured_job_data"] == structured_payload
+    assert resume_body["resume_bullets"] == resume_bullets
+    assert resume_body["cover_letter"] == cover_letter
+    assert resume_body["resume_output"]["resume_bullets"] == resume_bullets
+    assert resume_body["resume_output"]["cover_letter"] == cover_letter
+    assert resume_body["resume_run_id"] == "resume-v2-run-789"
 
-    # Two workflow invocations captured
-    assert len(captured_inputs) == 2
-    assert captured_inputs[0][0] == WORKFLOW_JD_TO_STRUCT_ID
-    assert captured_inputs[1][0] == WORKFLOW_RESUME_BUILDER_ID
-    assert captured_inputs[1][1]["target_role"] == "Staff AI Engineer"
+    # Resume build reused cached output (no additional run)
+    assert len(run_calls) == 1
 
     with Session(app_module.engine) as session:
-        db_app = session.get(JobApplication, application_id)
-        assert db_app is not None
+        db_app = session.exec(select(JobApplication)).one()
         assert db_app.jd_status == "succeeded"
-        assert db_app.jd_run_id == "jd-run-123"
         assert db_app.resume_status == "succeeded"
-        assert db_app.resume_run_id == "resume-run-456"
-        assert db_app.resume_output["output_parsed"] == resume_payload
+        assert db_app.jd_run_id == "resume-v2-run-789"
+        assert db_app.resume_run_id == "resume-v2-run-789"
+        assert db_app.jd_struct_data == structured_payload
+        assert db_app.resume_output["resume_bullets"] == resume_bullets
+        assert db_app.resume_output["cover_letter"] == cover_letter

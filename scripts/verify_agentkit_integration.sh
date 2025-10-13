@@ -112,19 +112,11 @@ fi
 
 # Check for workflow IDs in workflow_constants.py
 checks_total=$((checks_total + 1))
-if grep -q "wf_68e969c7da408190b3d046774e86e50700467750faf0f87a" workflow_constants.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} Resume_Builder_v1 workflow ID found in workflow_constants.py"
+if grep -q "wf_68ec6800d1948190a0629c0eaf07f8e303633b84fcb85ab9" workflow_constants.py 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} ResumeBuilderV2 workflow ID found in workflow_constants.py"
     checks_passed=$((checks_passed + 1))
 else
-    echo -e "${RED}✗${NC} Resume_Builder_v1 workflow ID not found in workflow_constants.py"
-fi
-
-checks_total=$((checks_total + 1))
-if grep -q "wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546" workflow_constants.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} JD_to_StructuredJD_v0 workflow ID found in workflow_constants.py"
-    checks_passed=$((checks_passed + 1))
-else
-    echo -e "${RED}✗${NC} JD_to_StructuredJD_v0 workflow ID not found in workflow_constants.py"
+    echo -e "${RED}✗${NC} ResumeBuilderV2 workflow ID not found in workflow_constants.py"
 fi
 
 echo ""
