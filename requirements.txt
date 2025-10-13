@@ -16,4 +16,4 @@ pytest
 pytest-cov
 python-dotenv
 alembic
-psycopg2-binary
+psycopg[binary]

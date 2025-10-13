@@ -20,6 +20,7 @@ _RESUME_BULLET_KEYS = [
     "bullet_points",
     "bullets",
     "draft_bullets",
+    "resume_bullets_text",
 ]
 
 _COVER_LETTER_KEYS = [
@@ -104,8 +105,18 @@ def extract_structured_job(payload: Any) -> Optional[Dict[str, Any]]:
         if _looks_like_structured_job(payload):
             return payload
 
+        # Check specific known keys first
+        for key in ["structured_job_data", "job_scraper_result"]:
+            if key in payload:
+                value = payload[key]
+                if isinstance(value, dict) and _looks_like_structured_job(value):
+                    return value
+                nested = extract_structured_job(value)
+                if nested:
+                    return nested
+
         for key, value in payload.items():
-            if key in _STRUCTURED_JOB_KEYS or key in {"structured_job_data", "output_parsed"}:
+            if key in _STRUCTURED_JOB_KEYS or key in {"output_parsed"}:
                 if isinstance(value, dict):
                     if _looks_like_structured_job(value):
                         return value
@@ -121,10 +132,12 @@ def extract_structured_job(payload: Any) -> Optional[Dict[str, Any]]:
                         if nested:
                             return nested
 
+        # Recursively search all values as last resort
         for value in payload.values():
-            nested = extract_structured_job(value)
-            if nested:
-                return nested
+            if isinstance(value, (dict, list, str)):
+                nested = extract_structured_job(value)
+                if nested:
+                    return nested
     elif isinstance(payload, list):
         for item in payload:
             nested = extract_structured_job(item)
@@ -214,6 +227,20 @@ def parse_resume_builder_result(run: Any) -> Tuple[Dict[str, Any], Optional[Dict
     resume_bullets = extract_resume_bullets(parsed_output)
     if (not resume_bullets) and parsed_from_text:
         resume_bullets = extract_resume_bullets(parsed_from_text)
+
+    resume_text = parsed_output.get("resume_bullets_text")
+    if not resume_text and parsed_output.get("resume_builder_result"):
+        maybe = parsed_output["resume_builder_result"]
+        if isinstance(maybe, dict):
+            resume_text = maybe.get("resume_bullets_text")
+    if not resume_text and isinstance(parsed_output.get("output_text"), str):
+        resume_text = parsed_output.get("output_text")
+    if resume_text:
+        parsed_output.setdefault("resume_bullets_text", resume_text)
+        if (not resume_bullets) and isinstance(resume_text, str):
+            alt_bullets = _normalize_bullet_list(resume_text)
+            if alt_bullets:
+                resume_bullets = alt_bullets
 
     cover_letter = extract_cover_letter(parsed_output)
     if (not cover_letter) and parsed_from_text:

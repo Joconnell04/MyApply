@@ -60,13 +60,13 @@ MyApply is a FastAPI-powered platform that combines structured experience graphs
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Backend** | FastAPI, SQLModel, Pydantic | API, ORM, validation |
-| **Database** | SQLite / PostgreSQL | Data persistence |
+| **Database** | PostgreSQL (psycopg v3) / SQLite | Data persistence with modern driver |
 | **Frontend** | Jinja2, HTMX, TailwindCSS | Server-rendered UI |
 | **AI/ML** | OpenAI API, AgentKit | LLM, workflow orchestration |
 | **Maps** | Mapbox GL JS, Isochrone API | Visualization, travel time |
 | **Auth** | Passlib[bcrypt], itsdangerous | Security, sessions |
 | **Testing** | Pytest, httpx | Unit & integration tests |
-| **Deployment** | Railway, Uvicorn | Cloud hosting, ASGI server |
+| **Deployment** | Railway, Gunicorn, Uvicorn | Cloud hosting, ASGI server |
 
 ---
 
@@ -95,8 +95,12 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ### Database Configuration
 
 - Set `DATABASE_URL` in `.env`; the default `sqlite:///./myapply.db` stores a SQLite file in the project root.
-- For PostgreSQL use `postgresql+psycopg://username:password@localhost:5432/myapply` (requires `psycopg[binary]`).
+- **For PostgreSQL** use `postgresql+psycopg://username:password@localhost:5432/myapply`
+  - **Requires**: `psycopg[binary]` (v3) driver - NOT `psycopg2-binary`
+  - The app automatically adds SSL support for Railway proxy connections
 - Alembic reads the same `DATABASE_URL`, so export it or run commands with `.env` loaded before invoking `alembic upgrade head`.
+
+**Note:** We use the modern `psycopg` (v3) driver. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for details.
 
 ### Create Admin User
 
@@ -234,11 +238,18 @@ SECRET_KEY=<generate-with-python-secrets>
 OPENAI_API_KEY=sk-your-key
 SESSION_SECURE=true
 ALLOWED_ORIGINS=https://your-app.railway.app
+# Verify DATABASE_URL uses psycopg driver:
+DATABASE_URL=postgresql+psycopg://user:pass@host:port/db
 ```
 
 Railway auto-detects FastAPI and sets `PORT` and `DATABASE_URL`.
 
-**Full deployment guide:** [DEPLOYMENT.md](DEPLOYMENT.md)
+**📚 Complete deployment guide:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - includes:
+- Database configuration (psycopg driver setup)
+- SSL configuration for Railway
+- Template path fixes
+- PORT binding verification
+- Troubleshooting guide
 
 ---
 
@@ -306,7 +317,7 @@ ENV=development                               # or production
 PORT=8000                                     # Server port
 ```
 
-**Full reference:** [DEPLOYMENT.md#environment-variables](DEPLOYMENT.md#environment-variables)
+**Full reference:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 
 ---
 
@@ -460,7 +471,7 @@ uvicorn app:app --reload  # Recreates tables
 | Mapbox maps not loading | Verify `MAPBOX_PUBLIC_TOKEN` is set |
 | Workflow 502 errors | Check OpenAI API key & rate limits |
 
-**Full troubleshooting guide:** [DEPLOYMENT.md#troubleshooting](DEPLOYMENT.md#troubleshooting)
+**Full troubleshooting guide:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 
 ---
 
@@ -501,8 +512,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📚 Documentation
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide (Railway, local, environment vars)
+- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment guide (Railway, PostgreSQL, psycopg setup, troubleshooting)
 - **[MyLifeSchemaInstructions.md](MyLifeSchemaInstructions.md)** - Experience graph schema reference
+- **[myapply_tools/README_TOOLS.md](myapply_tools/README_TOOLS.md)** - AgentKit tools service API reference
 
 ---
 
@@ -527,8 +539,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Quick Links
 
-- 🌐 [Live Demo](https://myapply.railway.app) *(replace with your URL)*
-- 📖 [Full Documentation](DEPLOYMENT.md)
+- 🌐 [Live Demo](https://myapply-production.up.railway.app)
+- 📖 [Deployment Guide](DEPLOYMENT_GUIDE.md)
 - 🐛 [Report Bug](https://github.com/your-username/MyApply/issues)
 - 💡 [Request Feature](https://github.com/your-username/MyApply/issues)
 - 💬 [Discussions](https://github.com/your-username/MyApply/discussions)

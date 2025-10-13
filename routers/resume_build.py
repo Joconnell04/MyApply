@@ -9,6 +9,7 @@ from sqlmodel import Session
 
 from app import get_session
 from applications import JobApplication
+from services.agentkit_debug_decoder import decode_latest_agentkit_response
 from services.openai_workflows import run_workflow
 from services.workflow_output_parser import (
     extract_cover_letter,
@@ -89,6 +90,7 @@ def run_resume_builder_v2(
 
         if resume_bullets or cover_letter:
             job_app.jd_struct_data = structured_job
+            job_app.jd_status = "succeeded"
             job_app.resume_status = "succeeded"
             job_app.updated_at = datetime.utcnow()
             session.add(job_app)
@@ -114,9 +116,13 @@ def run_resume_builder_v2(
             db_session=session,
             application_id=job_app.id,
         )
-    except HTTPException:
+    except HTTPException as exc:
         job_app.jd_status = "failed"
         job_app.resume_status = "failed"
+        job_app.resume_output = {
+            "error": str(getattr(exc, "detail", exc)),
+            "stage": "resume_build",
+        }
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
@@ -124,6 +130,10 @@ def run_resume_builder_v2(
     except Exception as exc:  # pragma: no cover - defensive
         job_app.jd_status = "failed"
         job_app.resume_status = "failed"
+        job_app.resume_output = {
+            "error": str(exc),
+            "stage": "resume_build",
+        }
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
@@ -133,20 +143,55 @@ def run_resume_builder_v2(
         ) from exc
 
     run_dict = to_dict(run) or {}
+    run_id = getattr(run, "id", None) or run_dict.get("id")
+    parsed_output, structured_job, resume_bullets, cover_letter = parse_resume_builder_result(run)
+
+    if structured_job is None:
+        decoded = decode_latest_agentkit_response(session, job_app.id)
+        if decoded:
+            decoded_run_id, decoded_output, decoded_structured_job, decoded_bullets, decoded_cover = decoded
+            run_id = decoded_run_id or run_id
+            parsed_output = decoded_output
+            structured_job = decoded_structured_job
+            resume_bullets = decoded_bullets
+            cover_letter = decoded_cover
+
     status_value = getattr(run, "status", None) or run_dict.get("status")
-    if status_value and str(status_value).lower() not in SUCCESS_STATUSES:
+    status_lower = str(status_value).lower() if status_value else None
+    if status_lower and status_lower not in SUCCESS_STATUSES:
+        if structured_job:
+            parsed_output = dict(parsed_output)
+            if status_value:
+                parsed_output.setdefault("workflow_status", status_value)
+        else:
+            job_app.jd_status = "failed"
+            job_app.resume_status = "failed"
+            job_app.resume_output = {
+                "error": f"Workflow status {status_value}",
+                "stage": "resume_build",
+            }
+            job_app.updated_at = datetime.utcnow()
+            session.add(job_app)
+            session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"ResumeBuilderV2 workflow returned status {status_value}",
+            )
+
+    if structured_job is None:
         job_app.jd_status = "failed"
         job_app.resume_status = "failed"
+        job_app.resume_output = {
+            "error": "Workflow returned no structured job data.",
+            "stage": "parse",
+        }
         job_app.updated_at = datetime.utcnow()
         session.add(job_app)
         session.commit()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"ResumeBuilderV2 workflow returned status {status_value}",
+            detail="ResumeBuilderV2 workflow returned no structured job data.",
         )
-
-    run_id = getattr(run, "id", None) or run_dict.get("id")
-    parsed_output, structured_job, resume_bullets, cover_letter = parse_resume_builder_result(run)
 
     job_app.jd_run_id = run_id or job_app.jd_run_id
     job_app.resume_run_id = run_id or job_app.resume_run_id

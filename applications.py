@@ -18,13 +18,14 @@ class JobApplication(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     user_id: str = Field(index=True)
     source_url: str
+    linked_job_id: Optional[str] = Field(default=None, index=True)  # Link to JobApplied
     jd_run_id: Optional[str] = Field(default=None, index=True)
-    jd_status: str = Field(default="pending")  # pending|running|succeeded|failed
+    jd_status: str = Field(default="pending")  # pending|running|succeeded|failed|aborted
     jd_struct_data: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSON)
     )
     resume_run_id: Optional[str] = Field(default=None, index=True)
-    resume_status: str = Field(default="idle")  # idle|running|succeeded|failed
+    resume_status: str = Field(default="idle")  # idle|running|succeeded|failed|aborted
     resume_output: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSON)
     )

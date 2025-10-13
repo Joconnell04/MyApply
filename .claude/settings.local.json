@@ -17,7 +17,16 @@
       "Bash(alembic:*)",
       "Bash(bash:*)",
       "Bash(sqlite3:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python3:*)",
+      "Bash(for:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $file ===\")",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(done)",
+      "Bash(cat:*)",
+      "Bash(xargs rm:*)"
     ],
     "deny": [],
     "ask": []

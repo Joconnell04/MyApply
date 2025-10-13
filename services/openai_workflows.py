@@ -1,64 +1,46 @@
 from __future__ import annotations
 
-import os
-import time
+import json
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, status
-from openai import OpenAI
 from sqlmodel import Session
 
-
-def _build_client() -> OpenAI:
-    try:
-        api_key = os.environ["OPENAI_API_KEY"]
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OPENAI_API_KEY is not configured.",
-        ) from exc
-    return OpenAI(api_key=api_key)
+from debug_logger import log_agentkit_call
+from services.resume_builder_service import (
+    AgentWorkflowError,
+    AgentWorkflowRun,
+    run_resume_builder_workflow,
+)
 
 
-_client: OpenAI | None = None
+def _extract_job_input(inputs: Dict[str, Any]) -> str:
+    """
+    Normalize workflow inputs used by the historic Workflows API into the
+    single text payload consumed by the AgentKit implementation.
+    """
+    if not inputs:
+        raise ValueError("Workflow inputs are required.")
+
+    for key in ("input_as_text", "job_url", "job_text", "text"):
+        value = inputs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    raise ValueError("Unable to determine job input text from workflow inputs.")
 
 
-def get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = _build_client()
-    return _client
-
-
-def _serialize_run(run: Any) -> Dict[str, Any]:
-    """Convert run object to dictionary for logging."""
-    try:
-        run_dict = {
-            "id": getattr(run, "id", None),
-            "status": getattr(run, "status", None),
-            "workflow_id": getattr(run, "workflow_id", None),
-            "version": getattr(run, "version", None),
-        }
-
-        # Safely serialize output
-        output = getattr(run, "output", None)
-        if output is not None:
-            try:
-                # Try to convert to dict if it's an object
-                if hasattr(output, "__dict__"):
-                    run_dict["output"] = output.__dict__
-                else:
-                    run_dict["output"] = output
-            except Exception:  # pylint: disable=broad-except
-                run_dict["output"] = str(output)
-
-        # Add any other relevant attributes
-        if hasattr(run, "error"):
-            run_dict["error"] = getattr(run, "error", None)
-
-        return run_dict
-    except Exception:  # pylint: disable=broad-except
-        return {"raw": str(run)}
+def _run_resume_builder_agentkit(
+    workflow_id: str,
+    version: str,
+    inputs: Dict[str, Any],
+) -> AgentWorkflowRun:
+    job_input = _extract_job_input(inputs)
+    return run_resume_builder_workflow(
+        workflow_id=workflow_id,
+        version=version,
+        job_input=job_input,
+    )
 
 
 def run_workflow(
@@ -67,25 +49,27 @@ def run_workflow(
     inputs: Dict[str, Any],
     db_session: Optional[Session] = None,
     application_id: Optional[str] = None,
-) -> Any:
+) -> AgentWorkflowRun:
     """
-    Execute an AgentKit workflow and poll until it reaches a terminal state.
+    Execute the ResumeBuilder workflow using the AgentKit SDK.
 
-    Args:
-        workflow_id: The AgentKit workflow ID
-        version: The workflow version
-        inputs: Input parameters for the workflow
-        db_session: Optional database session for debug logging
-        application_id: Optional application ID for linking debug logs
+    This is a drop-in replacement for the former OpenAI Workflows integration.
+    It preserves the logging contract and mimics the Workflows run payload.
     """
-    from debug_logger import log_agentkit_call
-    from models import APIDebugLog
+    def _execute() -> AgentWorkflowRun:
+        try:
+            return _run_resume_builder_agentkit(
+                workflow_id=workflow_id,
+                version=version,
+                inputs=inputs,
+            )
+        except (ValueError, AgentWorkflowError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to start workflow {workflow_id}: {exc}",
+            ) from exc
 
-    client = get_client()
-    start_time = time.time()
-
-    # Log the workflow call
-    if db_session:
+    if db_session is not None:
         try:
             with log_agentkit_call(
                 session=db_session,
@@ -93,55 +77,19 @@ def run_workflow(
                 inputs=inputs,
                 application_id=application_id,
             ) as logger:
-                try:
-                    run = client.workflows.runs.create(
-                        workflow_id=workflow_id,
-                        version=version,
-                        inputs=inputs,
-                    )
-                except Exception as exc:
-                    logger.log_response(
-                        error_message=f"Failed to start workflow: {exc}",
-                        status_code=502,
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=f"Failed to start workflow {workflow_id}: {exc}",
-                    ) from exc
-
-                # Poll for completion
-                while run.status in ("queued", "in_progress"):
-                    time.sleep(0.5)
-                    run = client.workflows.runs.retrieve(run.id)
-
-                # Log the final response
-                run_dict = _serialize_run(run)
+                run = _execute()
+                # Log the complete workflow output for debugging
                 logger.log_response(
-                    response_data=run_dict,
-                    status_code=200 if run.status == "completed" else 500,
+                    response_data=run.to_dict(),
+                    status_code=200,
                 )
-
                 return run
-        except Exception:  # pylint: disable=broad-except
-            # If logging fails, still try to run the workflow
-            pass
+        except HTTPException:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to start workflow {workflow_id}: {exc}",
+            ) from exc
 
-    # Fallback without logging
-    try:
-        run = client.workflows.runs.create(
-            workflow_id=workflow_id,
-            version=version,
-            inputs=inputs,
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to start workflow {workflow_id}: {exc}",
-        ) from exc
-
-    while run.status in ("queued", "in_progress"):
-        time.sleep(0.5)
-        run = client.workflows.runs.retrieve(run.id)
-
-    return run
-
+    return _execute()

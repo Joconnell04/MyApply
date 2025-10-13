@@ -1,4 +1,3 @@
-## ResumeBuilderV2 AgentKit Workflow copied from Agent Builder SDK output
 from agents import function_tool, WebSearchTool, Agent, ModelSettings, TResponseInputItem, Runner, RunConfig
 from pydantic import BaseModel
 
@@ -8,14 +7,10 @@ def extract_ats_keywords(job_url: str, top_n: integer):
   pass
 
 web_search_preview = WebSearchTool(
+  search_context_size="medium",
   user_location={
-    "type": "approximate",
-    "country": None,
-    "region": None,
-    "city": None,
-    "timezone": None
-  },
-  search_context_size="medium"
+    "type": "approximate"
+  }
 )
 class JobScraperSchema__Company(BaseModel):
   name: str
@@ -274,3 +269,16 @@ async def run_workflow(workflow_input: WorkflowInput):
   bullet_generator_result = {
     "output_text": bullet_generator_result_temp.final_output_as(str)
   }
+  end_result = {
+    "resume_bullets_text": None,
+    "output_parsed": {
+      "reasoning": None,
+      "plan": [
+
+      ],
+      "resume_bullet_points": [
+
+      ]
+    }
+  }
+  return end_result

@@ -7,12 +7,14 @@ from collections.abc import Iterator
 from datetime import datetime
 from functools import lru_cache
 from html import unescape
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+import os
 
 import httpx
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, model_validator
@@ -35,12 +37,16 @@ from graph.loader import GraphLoader, parse_graph_payload
 from graph.scoring import rank_facts
 from llm import LLMPipeline
 from models import APIDebugLog, ComposeRun, JobApplied, JobLocation, User
+from chatkit_integration.store import SQLChatStore, NoOpAttachmentStore
+from chatkit_integration.server import MyChatKitServer
+from chatkit.server import StreamingResult
 from validation import sanitize_string, validate_json_size, validate_url
 
 
 class Settings(BaseSettings):
     SECRET_KEY: str = "change-me"
-    DATABASE_URL: str = "sqlite:///./myapply.db"
+    # Railway production database (overridden by .env for local development)
+    DATABASE_URL: str = "postgresql+psycopg://postgres:cFrOJOrnwXQfQKVUAnkNwPYPronyPyMq@ballast.proxy.rlwy.net:33607/railway"
     SESSION_COOKIE_NAME: str = "app_session"
     SESSION_SECURE: Union[bool, Literal["auto"]] = "auto"
     SESSION_SAMESITE: str = "lax"
@@ -93,6 +99,9 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
+if settings.OPENAI_API_KEY:
+    os.environ.setdefault("OPENAI_API_KEY", settings.OPENAI_API_KEY)
+
 # Database engine configuration with SSL support for Railway Postgres
 def _get_engine_connect_args(db_url: str) -> dict:
     """
@@ -129,10 +138,14 @@ app.add_middleware(
     same_site=settings.SESSION_SAMESITE,
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Get base directory for robust path resolution
+BASE_DIR = Path(__file__).resolve().parent
 
-templates = Jinja2Templates(directory="templates")
+# Mount static files with absolute path
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# Use absolute path for templates directory for Railway deployment
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 login_rate_limiter = LoginRateLimiter()
 
 pipeline = LLMPipeline(
@@ -140,6 +153,10 @@ pipeline = LLMPipeline(
     model=settings.LLM_MODEL,
     cover_letter_model=settings.COVER_LETTER_MODEL,
 )
+
+chatkit_store = SQLChatStore(engine)
+chatkit_attachment_store = NoOpAttachmentStore()
+chatkit_server = MyChatKitServer(chatkit_store, chatkit_attachment_store)
 
 
 def _csrf_token(request: Request) -> str:
@@ -365,6 +382,41 @@ def _serialize_job(
     return job_payload
 
 
+def _serialize_job_run(job_app) -> dict[str, Any]:
+    resume_output = job_app.resume_output if isinstance(job_app.resume_output, dict) else {}
+    resume_bullets: List[str] = []
+    if isinstance(resume_output, dict):
+        resume_bullets = (
+            resume_output.get("resume_bullets")
+            or (resume_output.get("output_parsed") or {}).get("resume_bullet_points")
+            or []
+        )
+        if isinstance(resume_bullets, str):
+            resume_bullets = [resume_bullets]
+        if isinstance(resume_bullets, str):
+            resume_bullets = [resume_bullets]
+        if (not resume_bullets) and isinstance(resume_output.get("resume_bullets_text"), str):
+            resume_bullets = [
+                segment.strip()
+                for segment in resume_output["resume_bullets_text"].splitlines()
+                if segment.strip()
+            ]
+
+    updated_display = job_app.updated_at.strftime("%Y-%m-%d %H:%M") if job_app.updated_at else "—"
+
+    return {
+        "id": job_app.id,
+        "jd_status": job_app.jd_status,
+        "resume_status": job_app.resume_status,
+        "source_url": job_app.source_url,
+        "linked_job_id": getattr(job_app, "linked_job_id", None),
+        "resume_bullets": resume_bullets,
+        "resume_output": resume_output,
+        "updated_at": job_app.updated_at.isoformat() if job_app.updated_at else None,
+        "updated_at_display": updated_display,
+    }
+
+
 def get_current_user(
     request: Request, session: Session = Depends(get_session)
 ) -> Optional[User]:
@@ -456,6 +508,14 @@ from routers.resume_build import router as resume_router
 
 app.include_router(jd_router, prefix="/api/jd", tags=["jd"])
 app.include_router(resume_router, prefix="/api/resume", tags=["resume"])
+
+
+@app.post("/chatkit")
+async def chatkit_endpoint(request: Request):
+    result = await chatkit_server.process(await request.body(), {})
+    if isinstance(result, StreamingResult):
+        return StreamingResponse(result, media_type="text/event-stream")
+    return Response(content=result.json, media_type="application/json")
 
 
 # Error handlers
@@ -933,6 +993,14 @@ def jobs_page(
 ):
     user = _resolve_current_user(session, current_user)
     jobs_payload = _serialized_jobs_for_user(session, user)
+    from applications import JobApplication
+
+    job_runs_raw = session.exec(
+        select(JobApplication)
+        .where(JobApplication.user_id == user.id)
+        .order_by(JobApplication.updated_at.desc())
+    ).all()
+    job_runs = [_serialize_job_run(run) for run in job_runs_raw]
     for job in jobs_payload:
         try:
             applied_dt = datetime.fromisoformat(job["applied_at"])
@@ -945,6 +1013,7 @@ def jobs_page(
             "request": request,
             "current_user": user,
             "jobs": jobs_payload,
+            "job_runs": job_runs,
         },
     )
 
@@ -1300,18 +1369,7 @@ async def user_runs(
     if not current_user:
         return RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
 
-    runs = session.exec(
-        select(ComposeRun)
-        .where(ComposeRun.owner_id == current_user.id)
-        .order_by(ComposeRun.created_at.desc())
-    ).all()
-
-    context = {
-        "request": request,
-        "current_user": current_user,
-        "runs": runs,
-    }
-    return templates.TemplateResponse("runs.html", context)
+    return RedirectResponse(url="/jobs", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.delete("/api/runs/{run_id}")
@@ -1393,6 +1451,89 @@ async def get_run_debug_logs(
     return JSONResponse({"ok": True, "logs": log_entries})
 
 
+@app.get("/api/applications/{application_id}")
+async def get_application(
+    application_id: str,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Get application data."""
+    from applications import JobApplication
+
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    # Check if user owns this application
+    if str(app_record.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own applications.",
+        )
+
+    return JSONResponse({
+        "ok": True,
+        "application_id": app_record.id,
+        "user_id": app_record.user_id,
+        "source_url": app_record.source_url,
+        "jd_status": app_record.jd_status,
+        "jd_struct_data": app_record.jd_struct_data,
+        "resume_status": app_record.resume_status,
+        "resume_output": app_record.resume_output,
+        "created_at": app_record.created_at.isoformat(),
+        "updated_at": app_record.updated_at.isoformat(),
+    })
+
+
+@app.get("/applications/{application_id}/details", response_class=HTMLResponse)
+async def view_application_details(
+    application_id: str,
+    request: Request,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    """Render a detail page for a workflow run (JobApplication)."""
+    from applications import JobApplication
+
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found.")
+
+    if str(current_user.id) != app_record.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view your own runs.")
+
+    resume_output = app_record.resume_output if isinstance(app_record.resume_output, dict) else {}
+    resume_bullets = []
+    if isinstance(resume_output, dict):
+        resume_bullets = (
+            resume_output.get("resume_bullets")
+            or (resume_output.get("output_parsed") or {}).get("resume_bullet_points")
+            or []
+        )
+    resume_bullets_text = None
+    if isinstance(resume_output, dict):
+        resume_bullets_text = resume_output.get("resume_bullets_text")
+        if not resume_bullets_text and resume_bullets:
+            resume_bullets_text = "\n".join(f"- {bullet}" for bullet in resume_bullets)
+
+    structured_job_json = json.dumps(app_record.jd_struct_data or {}, indent=2, default=str)
+    resume_output_json = json.dumps(resume_output or {}, indent=2, default=str)
+
+    context = {
+        "request": request,
+        "current_user": current_user,
+        "application": app_record,
+        "resume_bullets": resume_bullets,
+        "resume_bullets_text": resume_bullets_text,
+        "structured_job_json": structured_job_json,
+        "resume_output_json": resume_output_json,
+    }
+    return templates.TemplateResponse("application_detail.html", context)
+
+
 @app.get("/api/applications/{application_id}/debug-logs")
 async def get_application_debug_logs(
     application_id: str,
@@ -1441,3 +1582,202 @@ async def get_application_debug_logs(
     ]
 
     return JSONResponse({"ok": True, "logs": log_entries})
+
+
+@app.post("/api/applications/{application_id}/abort")
+async def abort_application_run(
+    application_id: str,
+    request: Request,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Abort a running job application."""
+    from applications import JobApplication
+
+    # Extract CSRF token from JSON body
+    body = await request.json()
+    csrf_token = body.get("csrf_token")
+    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
+
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    # Check if user owns this application
+    if str(app_record.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only abort your own application runs.",
+        )
+
+    # Only abort if it's actually running
+    if app_record.jd_status not in ["running", "pending"] and app_record.resume_status not in ["running", "pending"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application is not in a running state.",
+        )
+
+    # Mark as aborted
+    app_record.jd_status = "aborted"
+    app_record.resume_status = "aborted"
+    app_record.resume_output = app_record.resume_output or {}
+    if isinstance(app_record.resume_output, dict):
+        app_record.resume_output["aborted"] = True
+        app_record.resume_output["aborted_by_user"] = True
+    app_record.updated_at = datetime.utcnow()
+
+    session.add(app_record)
+    session.commit()
+    session.refresh(app_record)
+
+    return JSONResponse({"ok": True, "message": "Run aborted successfully.", "application_id": app_record.id})
+
+
+@app.post("/api/applications/{application_id}/reparse")
+async def reparse_application_from_debug_logs(
+    application_id: str,
+    request: Request,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """
+    Reparse an application's output from debug logs.
+
+    This is useful when the initial parsing failed or returned incomplete data.
+    The system will search debug logs for the complete workflow output.
+    """
+    from applications import JobApplication
+    from services.debug_log_parser import parse_complete_workflow_from_debug_logs
+
+    # Extract CSRF token from JSON body
+    body = await request.json()
+    csrf_token = body.get("csrf_token")
+    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
+
+    # Get the application
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found.",
+        )
+
+    # Check ownership
+    if str(app_record.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only reparse your own applications.",
+        )
+
+    # Parse from debug logs
+    debug_result = parse_complete_workflow_from_debug_logs(session, application_id)
+
+    if not debug_result["success"]:
+        return JSONResponse({
+            "ok": False,
+            "message": "No valid data found in debug logs.",
+            "parsing_attempted": True
+        }, status_code=404)
+
+    # Update the application with the parsed data
+    if debug_result["structured_job"]:
+        app_record.jd_struct_data = debug_result["structured_job"]
+        app_record.jd_status = "succeeded"
+
+    if debug_result["resume_bullets"]:
+        app_record.resume_output = app_record.resume_output or {}
+        app_record.resume_output["resume_bullets"] = debug_result["resume_bullets"]
+        app_record.resume_output["cover_letter"] = debug_result["cover_letter"]
+        app_record.resume_output["decoder_source"] = "debug_log_parser_manual"
+        app_record.resume_output["parsing_strategy"] = debug_result["parsing_strategy"]
+        app_record.resume_status = "succeeded"
+
+    if debug_result["run_id"]:
+        app_record.jd_run_id = debug_result["run_id"]
+        app_record.resume_run_id = debug_result["run_id"]
+
+    app_record.updated_at = datetime.utcnow()
+    session.add(app_record)
+    session.commit()
+    session.refresh(app_record)
+
+    return JSONResponse({
+        "ok": True,
+        "message": "Application reparsed successfully from debug logs.",
+        "jd_status": app_record.jd_status,
+        "resume_status": app_record.resume_status,
+        "has_structured_job": bool(app_record.jd_struct_data),
+        "has_resume_bullets": bool(app_record.resume_output and app_record.resume_output.get("resume_bullets")),
+        "parsing_strategy": debug_result["parsing_strategy"]
+    })
+
+
+@app.post("/api/applications/{application_id}/link-to-job")
+async def link_application_to_job(
+    application_id: str,
+    request: Request,
+    current_user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+) -> JSONResponse:
+    """Link a workflow run (JobApplication) to an applied job (JobApplied)."""
+    from applications import JobApplication
+
+    # Extract CSRF token and job_id from JSON body
+    body = await request.json()
+    csrf_token = body.get("csrf_token")
+    job_id = body.get("job_id")
+
+    validate_csrf_token(request, csrf_token, settings.SECRET_KEY)
+
+    if not job_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="job_id is required.",
+        )
+
+    # Get the application run
+    app_record = session.get(JobApplication, application_id)
+    if not app_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application run not found.",
+        )
+
+    # Check if user owns this application
+    if str(app_record.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only link your own application runs.",
+        )
+
+    # Verify the job exists and belongs to the user
+    job = session.get(JobApplied, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Applied job not found.",
+        )
+
+    if str(job.user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only link to your own applied jobs.",
+        )
+
+    # Link the application to the job
+    app_record.linked_job_id = job_id
+    app_record.updated_at = datetime.utcnow()
+
+    session.add(app_record)
+    session.commit()
+    session.refresh(app_record)
+
+    return JSONResponse({
+        "ok": True,
+        "message": "Run linked to job successfully.",
+        "application_id": app_record.id,
+        "linked_job_id": job_id
+    })
