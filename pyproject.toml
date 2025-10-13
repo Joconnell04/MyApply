@@ -15,7 +15,8 @@ dependencies = [
     "sqlmodel",
     "pydantic-settings",
     "httpx",
-    "python-dotenv"
+    "python-dotenv",
+    "openai"
 ]
 
 [project.optional-dependencies]

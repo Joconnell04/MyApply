@@ -75,8 +75,8 @@ python scripts/create_admin.py admin@example.com "SecurePassword123!"
 # All tests
 pytest -v
 
-# AgentKit integration tests only
-pytest tests/test_agentkit_routes.py -v
+# Workflow integration tests only
+pytest tests/test_workflows.py -v
 
 # With coverage
 pytest --cov=. --cov-report=html
@@ -88,71 +88,60 @@ pytest --cov=. --cov-report=html
 
 To wire up AgentKit in any environment:
 
-1. Set `OPENAI_API_KEY` (and optionally `LLM_MODEL` / `COVER_LETTER_MODEL`) in the deployment environment.
-2. Update the workflow IDs in [`routes.py`](routes.py) so they match the AgentKit workflows you deployed.
-3. Confirm the runtime has outbound network access to OpenAI; the backend calls AgentKit synchronously.
+1. Set `OPENAI_API_KEY` (and optionally `ENV`, `LLM_MODEL`, `COVER_LETTER_MODEL`) in the deployment environment.
+2. Update the workflow IDs in [`workflow_constants.py`](workflow_constants.py) so they match the AgentKit workflows you deployed.
+3. Confirm the runtime has outbound network access to OpenAI; the backend calls the Workflows API synchronously.
 4. Seed or enter MyLife JSON on the Profile page so the resume builder has data to rank.
 5. Exercise the endpoints below or the Compose UI to verify end-to-end orchestration.
 
-MyApply integrates three AgentKit workflows for automated resume generation:
+MyApply orchestrates two AgentKit workflows for automated resume generation:
 
 ### Workflows
 
 | Workflow | ID | Version | Purpose |
-|----------|----|---------| --------|
-| **Intent_Routerv0** | `wf_68e8215242b881909e95dda286109e500a969132ff1ebcdb` | 2 | Route user intent (resume/cover letter/both) |
+|----------|----|---------|---------|
 | **JD_to_StructuredJD_v0** | `wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546` | 4 | Parse & structure job descriptions |
 | **Resume_Builder_v1** | `wf_68e969c7da408190b3d046774e86e50700467750faf0f87a` | 4 | Build tailored resumes from structured JD |
 
 ### REST API Endpoints
 
-#### 1. Structure Job Description
+#### 1. Phase 1 — Ingest Job Description URL
 
-**Endpoint:** `POST /api/jd/structure`
+**Endpoint:** `POST /api/jd/ingest`
 
-Parse a raw job description into structured format.
+Fetches a job posting URL, runs `JD_to_StructuredJD_v0`, and stores both the structured data and workflow metadata.
 
 ```bash
-curl -X POST http://localhost:8000/api/jd/structure \
+curl -X POST http://localhost:8000/api/jd/ingest \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{
     "user_id": "user-123",
-    "jd_text": "Senior Python Developer\n\nWe are seeking an experienced Python developer...\n\nRequirements:\n- 5+ years Python\n- FastAPI, PostgreSQL\n\nLocation: San Francisco, CA"
+    "source_url": "https://example.com/jobs/senior-python"
   }'
 ```
 
 **Response:**
 ```json
 {
-  "ok": true,
-  "run_id": "abc123",
-  "structured_jd": {
+  "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
+  "jd_status": "succeeded",
+  "jd_struct_data": {
     "title": "Senior Python Developer",
     "company_name": "...",
-    "seniority": "senior",
     "locations": [
-      {
-        "city": "San Francisco",
-        "region": "CA",
-        "country": "USA",
-        "type": "onsite",
-        "confidence": 0.95
-      }
+      {"city": "San Francisco", "region": "CA", "country": "USA", "type": "hybrid"}
     ],
-    "skills": {
-      "must_have": ["Python", "FastAPI", "PostgreSQL"],
-      "nice_to_have": []
-    }
+    "skills": {"must_have": ["Python", "FastAPI", "PostgreSQL"]}
   }
 }
 ```
 
-#### 2. Build Resume (with Auto-Orchestration)
+#### 2. Phase 2 — Build Tailored Resume
 
 **Endpoint:** `POST /api/resume/build`
 
-Build a tailored resume. If `jd_text` is provided without `jd_structured`, automatically structures the JD first.
+Runs `Resume_Builder_v1` using the stored structured JD and persists the generated bullets and packaging.
 
 ```bash
 curl -X POST http://localhost:8000/api/resume/build \
@@ -160,66 +149,38 @@ curl -X POST http://localhost:8000/api/resume/build \
   -b cookies.txt \
   -d '{
     "user_id": "user-123",
-    "jd_text": "Backend Engineer at StartupCo\n\nLooking for a mid-level backend engineer...",
+    "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
     "target_role": "Backend Engineer"
   }'
 ```
 
-**Response:**
+**Response (truncated):**
 ```json
 {
-  "ok": true,
-  "resume_run_id": "def456",
-  "jd_structure_run_id": "ghi789",
-  "structured_jd": { ... },
-  "resume_bundle": {
+  "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
+  "resume_status": "succeeded",
+  "resume_output": {
     "output_parsed": {
-      "professional_summary": "Experienced backend engineer...",
-      "target_role": "Backend Engineer",
-      "experience": [...],
-      "skills": [...]
-    }
+      "bullets": [
+        "Scaled async APIs handling 50M+ daily calls by modernising FastAPI services.",
+        "Led cross-functional initiative to harden Python platform security and observability."
+      ],
+      "package": {"summary": "..."}
+    },
+    "output_text": "Generated resume bullets..."
   }
 }
-```
-
-#### 3. Route Intent
-
-**Endpoint:** `POST /api/intent/route`
-
-Determine workflow routing based on user choice.
-
-```bash
-curl -X POST http://localhost:8000/api/intent/route \
-  -H "Content-Type: application/json" \
-  -b cookies.txt \
-  -d '{
-    "user_id": "user-123",
-    "choice": "resume",
-    "jd_text": "Optional job description..."
-  }'
-```
-
-#### 4. Get Workflow Run
-
-**Endpoint:** `GET /api/runs/{run_id}`
-
-Retrieve stored workflow run and artifacts.
-
-```bash
-curl -X GET http://localhost:8000/api/runs/{run_id} \
-  -b cookies.txt
 ```
 
 ### Architecture
 
 **Backend as Conductor:** Workflows do NOT call each other. The backend:
-1. Calls workflows synchronously
-2. Persists run metadata in `workflow_run` table
-3. Stores artifacts in `artifact` table
+1. Calls workflows synchronously via `services/openai_workflows.py`
+2. Persists job application state in `JobApplication`
+3. Stores all workflow metadata in `workflow_run` and artifacts if you extend the schema
 4. Passes outputs from one workflow as inputs to another
 
-> **Note:** Until the public AgentKit Workflow Runs SDK is available, `agentkit.py` proxies each call through `chat.completions` with `response_format="json_object"` to emulate workflow behavior.
+> **Note:** The backend now uses the official OpenAI Workflows API to run both phases and polls until completion.
 
 ---
 

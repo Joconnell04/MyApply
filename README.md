@@ -108,7 +108,7 @@ python scripts/create_admin.py admin@example.com "SecurePassword123!"
 
 ```bash
 pytest -v                              # All tests
-pytest tests/test_agentkit_routes.py  # AgentKit tests only
+pytest tests/test_workflows.py  # Workflow orchestration test
 pytest --cov=. --cov-report=html      # With coverage
 ```
 
@@ -120,58 +120,59 @@ pytest --cov=. --cov-report=html      # With coverage
    - Set `OPENAI_API_KEY` in your `.env` file (copy `.env.example` as a starter).
    - Optionally override `LLM_MODEL` and `COVER_LETTER_MODEL` if you prefer different OpenAI models.
 2. **Map workflow IDs**
-   - The backend orchestrator calls three AgentKit workflows. Update the IDs in [`routes.py`](routes.py) under `WORKFLOW_INTENT_ROUTER`, `WORKFLOW_JD_TO_STRUCTURED`, and `WORKFLOW_RESUME_BUILDER` to match your AgentKit deployments.
+   - The backend orchestrator calls two AgentKit workflows. Update the IDs in [`workflow_constants.py`](workflow_constants.py) to match your AgentKit deployments.
 3. **Start the app and sign in**
    - Run `uvicorn app:app --reload`, register or log in, and populate your Profile → MyLife JSON so the composer has data to work with.
 4. **Trigger the workflows**
-   - Use the Compose UI or call the REST endpoints (`/api/intent/route`, `/api/jd/structure`, `/api/resume/build`) with an authenticated session. Example `curl` commands are provided below.
-   - Run `pytest tests/test_agentkit_routes.py` for a quick smoke test.
+   - Use the Compose UI or call the REST endpoints (`/api/jd/ingest`, `/api/resume/build`) with an authenticated session. Example `curl` commands are provided below.
+   - Run `pytest tests/test_workflows.py` for a quick smoke test.
 5. **Troubleshoot connectivity**
    - Ensure outbound network access to OpenAI from your environment.
    - Check server logs for `Workflow execution failed` messages; the error payload will tell you whether the AgentKit call or JSON parsing failed.
 
-> ℹ️ The interim `agentkit.py` wrapper currently uses `chat.completions` with `response_format="json_object"` to simulate AgentKit Workflow Runs until the official SDK is public.
+> ℹ️ The backend now uses the OpenAI Workflows API via `services/openai_workflows.py` for both phases with synchronous polling.
 
 ---
 
-## 🤖 AgentKit API Endpoints
+## 🤖 Workflow API Endpoints
 
-### Structure Job Description
+### Phase 1 — Ingest Job Description URL
 
-Parse raw JD into structured format with locations, skills, and requirements.
+Fetch a job posting, run the `JD_to_StructuredJD_v0` workflow, and persist its output.
 
 ```bash
-POST /api/jd/structure
+POST /api/jd/ingest
 ```
 
 **Example:**
 ```bash
-curl -X POST http://localhost:8000/api/jd/structure \
+curl -X POST http://localhost:8000/api/jd/ingest \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{
     "user_id": "user-123",
-    "jd_text": "Senior Python Developer\n\nRequirements:\n- 5+ years Python\n- FastAPI\n\nLocation: San Francisco, CA"
+    "source_url": "https://example.com/jobs/senior-python"
   }'
 ```
 
 **Response:**
 ```json
 {
-  "ok": true,
-  "run_id": "abc123",
-  "structured_jd": {
+  "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
+  "jd_status": "succeeded",
+  "jd_struct_data": {
     "title": "Senior Python Developer",
-    "seniority": "senior",
-    "locations": [{"city": "San Francisco", "region": "CA", "type": "hybrid"}],
+    "locations": [
+      {"city": "San Francisco", "region": "CA", "type": "hybrid"}
+    ],
     "skills": {"must_have": ["Python", "FastAPI"]}
   }
 }
 ```
 
-### Build Resume
+### Phase 2 — Build Tailored Resume
 
-Generate tailored resume with auto-orchestration (structures JD if needed).
+Use the stored structured JD to call `Resume_Builder_v1` and persist the generated bullets and packaging.
 
 ```bash
 POST /api/resume/build
@@ -184,17 +185,27 @@ curl -X POST http://localhost:8000/api/resume/build \
   -b cookies.txt \
   -d '{
     "user_id": "user-123",
-    "jd_text": "Backend Engineer role...",
+    "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
     "target_role": "Backend Engineer"
   }'
 ```
 
-### Get Workflow Run
-
-Retrieve stored run metadata and artifacts.
-
-```bash
-GET /api/runs/{run_id}
+**Response (truncated):**
+```json
+{
+  "application_id": "4b8c57d1-02df-4d6e-9cde-8ab3a845c3dd",
+  "resume_status": "succeeded",
+  "resume_output": {
+    "output_parsed": {
+      "bullets": [
+        "Scaled async APIs handling 50M+ daily calls by modernising FastAPI services.",
+        "Led cross-functional initiative to harden Python platform security and observability."
+      ],
+      "package": {"summary": "..."}
+    },
+    "output_text": "Generated resume bullets..."
+  }
+}
 ```
 
 ---
@@ -230,8 +241,14 @@ MyApply/
 ├── app.py                      # FastAPI application & main routes
 ├── auth.py                     # Authentication & session management
 ├── models.py                   # SQLModel database tables
-├── agentkit.py                 # AgentKit workflow runner
-├── routes.py                   # AgentKit REST endpoints
+├── applications.py             # Job application persistence models
+├── routers/                    # FastAPI routers for workflow orchestration
+│   ├── __init__.py
+│   ├── jd_ingest.py
+│   └── resume_build.py
+├── services/
+│   ├── __init__.py
+│   └── openai_workflows.py     # OpenAI Workflows client helper
 ├── llm.py                      # LLM pipeline for compose features
 ├── validation.py               # Input sanitization
 ├── graph/                      # Experience graph system
@@ -331,7 +348,7 @@ alembic upgrade head
 pytest -v
 
 # Specific test file
-pytest tests/test_agentkit_routes.py -v
+pytest tests/test_workflows.py -v
 
 # With coverage report
 pytest --cov=. --cov-report=html
@@ -355,7 +372,7 @@ ruff check .
 ruff format .
 
 # Type checking
-mypy app.py models.py routes.py
+mypy app.py models.py routers/jd_ingest.py routers/resume_build.py
 ```
 
 ### Database Management
@@ -374,7 +391,7 @@ uvicorn app:app --reload  # Recreates tables
 
 ### Adding a Workflow
 
-1. Add workflow config in `routes.py`:
+1. Add workflow identifiers in `workflow_constants.py`:
    ```python
    WORKFLOW_NEW = {
        "id": "wf_...",
@@ -382,19 +399,19 @@ uvicorn app:app --reload  # Recreates tables
    }
    ```
 
-2. Create endpoint function:
+2. Create or extend a router in `routers/`:
    ```python
    @router.post("/api/new/endpoint")
    def api_new_endpoint(...):
-       result = run_workflow(
-           workflow_id=WORKFLOW_NEW["id"],
-           version=WORKFLOW_NEW["version"],
-           input_vars={...}
+       run = run_workflow(
+           workflow_id=WORKFLOW_NEW_ID,
+           version=WORKFLOW_NEW_VER,
+           inputs={...},
        )
        ...
    ```
 
-3. Add tests in `tests/test_agentkit_routes.py`
+3. Add tests in `tests/test_workflows.py`
 
 ---
 

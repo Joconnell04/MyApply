@@ -11,6 +11,9 @@ from sqlmodel import Field, SQLModel
 
 from graph.schema import EdgeType, NodeType, PrivacyLevel
 
+# Import JobApplication to ensure it's registered with SQLModel metadata
+from applications import JobApplication  # noqa: F401
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -174,11 +177,11 @@ class WorkflowRun(SQLModel, table=True):
     __tablename__ = "workflow_run"
     __table_args__ = (
         Index("ix_workflow_run_user_created", "user_id", "created_at"),
-        Index("ix_workflow_run_workflow_id", "workflow_id"),
+        Index("ix_workflow_run_workflow_id_custom", "workflow_id"),
     )
 
     id: str = Field(default_factory=lambda: uuid4().hex, primary_key=True)
-    workflow_id: str = Field(nullable=False, index=True)
+    workflow_id: str = Field(nullable=False)
     version: str = Field(nullable=False)
     status: str = Field(nullable=False)  # "success", "error", "invalid"
     user_id: int = Field(foreign_key="user.id", nullable=False, index=True)
@@ -201,8 +204,8 @@ class Artifact(SQLModel, table=True):
     )
 
     id: str = Field(default_factory=lambda: uuid4().hex, primary_key=True)
-    run_id: str = Field(foreign_key="workflow_run.id", nullable=False, index=True)
-    kind: str = Field(nullable=False, index=True)  # e.g., "structured_jd", "resume_bullets"
+    run_id: str = Field(foreign_key="workflow_run.id", nullable=False)
+    kind: str = Field(nullable=False)  # e.g., "structured_jd", "resume_bullets"
     label: Optional[str] = Field(default=None)
     payload_json: Dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=utc_now, nullable=False)

@@ -31,8 +31,11 @@ check_file() {
 
 # Check core files
 echo "📁 Checking core integration files..."
-check_file "agentkit.py"
-check_file "routes.py"
+check_file "applications.py"
+check_file "workflow_constants.py"
+check_file "routers/jd_ingest.py"
+check_file "routers/resume_build.py"
+check_file "services/openai_workflows.py"
 check_file "models.py"
 check_file "app.py"
 
@@ -43,7 +46,7 @@ check_file "DEPLOYMENT.md"
 
 echo ""
 echo "🧪 Checking test files..."
-check_file "tests/test_agentkit_routes.py"
+check_file "tests/test_workflows.py"
 check_file "tests/__init__.py"
 
 echo ""
@@ -81,13 +84,21 @@ else
     echo -e "${RED}✗${NC} CORS middleware not found in app.py"
 fi
 
-# Check if app.py includes router
+# Check if app.py includes routers
 checks_total=$((checks_total + 1))
-if grep -q "from routes import router" app.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} AgentKit router imported in app.py"
+if grep -q "from routers.jd_ingest import router" app.py 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} JD ingest router imported in app.py"
     checks_passed=$((checks_passed + 1))
 else
-    echo -e "${RED}✗${NC} AgentKit router not imported in app.py"
+    echo -e "${RED}✗${NC} JD ingest router not imported in app.py"
+fi
+
+checks_total=$((checks_total + 1))
+if grep -q "from routers.resume_build import router" app.py 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} Resume build router imported in app.py"
+    checks_passed=$((checks_passed + 1))
+else
+    echo -e "${RED}✗${NC} Resume build router not imported in app.py"
 fi
 
 # Check if requirements.txt includes pytest
@@ -99,29 +110,21 @@ else
     echo -e "${RED}✗${NC} pytest not found in requirements.txt"
 fi
 
-# Check for workflow IDs in routes.py
+# Check for workflow IDs in workflow_constants.py
 checks_total=$((checks_total + 1))
-if grep -q "wf_68e969c7da408190b3d046774e86e50700467750faf0f87a" routes.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} Resume_Builder_v1 workflow ID found in routes.py"
+if grep -q "wf_68e969c7da408190b3d046774e86e50700467750faf0f87a" workflow_constants.py 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} Resume_Builder_v1 workflow ID found in workflow_constants.py"
     checks_passed=$((checks_passed + 1))
 else
-    echo -e "${RED}✗${NC} Resume_Builder_v1 workflow ID not found in routes.py"
+    echo -e "${RED}✗${NC} Resume_Builder_v1 workflow ID not found in workflow_constants.py"
 fi
 
 checks_total=$((checks_total + 1))
-if grep -q "wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546" routes.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} JD_to_StructuredJD_v0 workflow ID found in routes.py"
+if grep -q "wf_68e80e14fad48190a83d85460325ba7f072fbeb74efb9546" workflow_constants.py 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} JD_to_StructuredJD_v0 workflow ID found in workflow_constants.py"
     checks_passed=$((checks_passed + 1))
 else
-    echo -e "${RED}✗${NC} JD_to_StructuredJD_v0 workflow ID not found in routes.py"
-fi
-
-checks_total=$((checks_total + 1))
-if grep -q "wf_68e8215242b881909e95dda286109e500a969132ff1ebcdb" routes.py 2>/dev/null; then
-    echo -e "${GREEN}✓${NC} Intent_Routerv0 workflow ID found in routes.py"
-    checks_passed=$((checks_passed + 1))
-else
-    echo -e "${RED}✗${NC} Intent_Routerv0 workflow ID not found in routes.py"
+    echo -e "${RED}✗${NC} JD_to_StructuredJD_v0 workflow ID not found in workflow_constants.py"
 fi
 
 echo ""

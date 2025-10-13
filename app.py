@@ -436,13 +436,12 @@ def on_startup() -> None:
     SQLModel.metadata.create_all(engine)
 
 
-# Include AgentKit workflow routes
-try:
-    from routes import router as agentkit_router
-    app.include_router(agentkit_router)
-except ImportError:
-    # Gracefully handle if routes module is not yet available
-    pass
+# Include workflow orchestration routes
+from routers.jd_ingest import router as jd_router
+from routers.resume_build import router as resume_router
+
+app.include_router(jd_router, prefix="/api/jd", tags=["jd"])
+app.include_router(resume_router, prefix="/api/resume", tags=["resume"])
 
 
 # Error handlers

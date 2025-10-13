@@ -22,12 +22,14 @@ def _import_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("SESSION_SECURE", "auto")
     monkeypatch.setenv("MAPBOX_PUBLIC_TOKEN", "test-public-token")
     monkeypatch.setenv("MAPBOX_SECRET_TOKEN", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     # Remove all cached modules completely
     modules_to_clear = [
-        "app", "models", "auth", "routes", "llm", "validation", "models_llm",
+        "app", "models", "auth", "llm", "validation", "models_llm",
+        "applications", "routers", "services",
         "graph", "graph.schema", "graph.loader", "graph.scoring",
-        "myapply_tools", "agentkit"
+        "myapply_tools"
     ]
     for module_name in list(sys.modules.keys()):
         if any(module_name == mod or module_name.startswith(mod + ".") for mod in modules_to_clear):

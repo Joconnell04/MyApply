@@ -14,7 +14,8 @@
       "Bash(pytest:*)",
       "Bash(alembic revision:*)",
       "Bash(alembic current:*)",
-      "Bash(alembic:*)"
+      "Bash(alembic:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []
