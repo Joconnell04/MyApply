@@ -32,7 +32,6 @@ MyApply is an AI-powered career application platform built on FastAPI that orche
 | **ORM** | SQLModel | Type-safe database operations |
 | **Database** | PostgreSQL (psycopg v3) / SQLite | Data persistence |
 | **AI Orchestration** | OpenAI AgentKit SDK | Workflow execution |
-| **Chat Interface** | Anthropic ChatKit | Conversational UI |
 | **Frontend** | Jinja2 + HTMX + TailwindCSS | Server-rendered reactive UI |
 | **LLM Provider** | OpenAI API (GPT-4o-mini) | Language model operations |
 | **Maps** | Mapbox GL JS + Isochrone API | Location visualization |
@@ -157,13 +156,13 @@ Response to User
 
 ### Workflow Architecture
 
-MyApply migrated from the deprecated OpenAI Workflows API to **OpenAI AgentKit SDK**. The implementation maintains backward compatibility while providing enhanced functionality.
+MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows locally. The AgentKit SDK allows agent definitions to live directly in the codebase ([services/resume_builder_agents.py](services/resume_builder_agents.py)) and execute synchronously or asynchronously via the `Runner` API.
 
 ### ResumeBuilderV2 Workflow
 
-**Location:** `services/resume_builder_agents.py`
+**Location:** [services/resume_builder_agents.py](services/resume_builder_agents.py)
 
-This is the primary workflow that orchestrates job description parsing and resume generation.
+This module contains the AgentKit agent definitions that orchestrate job description parsing and resume generation. Agents execute locally using the AgentKit SDK, not via external workflow IDs.
 
 #### Agent Graph
 
@@ -316,9 +315,9 @@ The service provides `run_resume_builder_workflow()` which wraps the async execu
 
 ### Workflow Integration Layer
 
-**Location:** `services/openai_workflows.py`
+**Location:** [services/openai_workflows.py](services/openai_workflows.py)
 
-**Purpose:** Drop-in replacement for deprecated OpenAI Workflows API
+**Purpose:** Compatibility wrapper that provides a familiar API surface for calling AgentKit workflows
 
 **Key Function:**
 ```python
@@ -371,176 +370,40 @@ def run_workflow(
 
 ### Workflow Constants
 
-**Location:** `workflow_constants.py`
+**Location:** [workflow_constants.py](workflow_constants.py)
 
 ```python
 WORKFLOW_RESUME_BUILDER_V2_ID = "wf_68ec6800d1948190a0629c0eaf07f8e303633b84fcb85ab9"
 WORKFLOW_RESUME_BUILDER_V2_VER = "1"
 ```
 
-These IDs are registered in OpenAI AgentKit platform and must match the deployed workflow.
+These IDs are used for logging and tracing purposes only. The workflow executes locally via the AgentKit SDK, not through an external OpenAI platform deployment.
 
 ---
 
-## ChatKit Integration
+## ChatKit Integration (Not Currently Implemented)
 
 ### Overview
 
-MyApply integrates **Anthropic ChatKit** to provide conversational AI capabilities. ChatKit uses the AgentKit SDK for agent execution and SQLModel for persistence.
+The codebase includes preliminary infrastructure for OpenAI ChatKit integration in the `chatkit_integration/` directory. However, **ChatKit is not currently active or functional** in the application.
 
-### Architecture
+### Implementation Status
 
-```
-┌────────────────────────────────────────────────────┐
-│              app.py (FastAPI)                       │
-│                                                     │
-│  POST /chatkit ──────────────────────────────┐     │
-│         │                                     │     │
-│         ▼                                     │     │
-│  ┌─────────────────────────────────────┐     │     │
-│  │  MyChatKitServer.process()          │     │     │
-│  │  (chatkit_integration/server.py)    │     │     │
-│  └─────────────────────────────────────┘     │     │
-│         │                                     │     │
-└─────────┼─────────────────────────────────────┼─────┘
-          │                                     │
-          ▼                                     │
-┌─────────────────────────────────────────┐    │
-│     SQLChatStore (Persistence)          │    │
-│  (chatkit_integration/store.py)         │    │
-│                                          │    │
-│  Tables:                                 │    │
-│  - chatkit_thread                        │    │
-│  - chatkit_thread_item                   │    │
-└─────────────────────────────────────────┘    │
-          │                                     │
-          ▼                                     │
-┌─────────────────────────────────────────┐    │
-│    AgentKit Runner                       │    │
-│  (agents SDK)                            │    │
-│                                          │    │
-│  Agent: "Assistant"                      │    │
-│  Model: gpt-4.1-mini                     │    │
-│  Temp: 0.8, Max Tokens: 2048             │    │
-└─────────────────────────────────────────┘    │
-          │                                     │
-          ▼                                     │
-    Streaming Response ──────────────────────────┘
-    (Server-Sent Events)
-```
+The `chatkit_integration/` directory contains preliminary code for a conversational AI interface, but it is **not currently integrated** into the main FastAPI application. The `/chatkit` endpoint is not registered, and the ChatKit server is not initialized.
 
-### ChatKit Server Implementation
+**Existing Files:**
+- `chatkit_integration/server.py` - Server scaffolding
+- `chatkit_integration/store.py` - SQLModel-based storage layer
+- `chatkit_integration/models.py` - Data models for threads and messages
 
-**Location:** `chatkit_integration/server.py`
+**Tables Defined (but not actively used):**
+- `chatkit_thread` - Conversation thread metadata
+- `chatkit_thread_item` - Individual messages in threads
 
-**Class:** `MyChatKitServer`
-
-```python
-class MyChatKitServer(ChatKitServer[Any]):
-    def __init__(self, store, attachment_store=None, *, agent: Agent | None = None):
-        super().__init__(store, attachment_store)
-        self.assistant_agent = agent or Agent[AgentContext](
-            model="gpt-4.1-mini",
-            name="Assistant",
-            instructions="You are a helpful assistant for MyApply users.",
-            model_settings=ModelSettings(temperature=0.8, max_tokens=2048),
-        )
-```
-
-**Key Methods:**
-
-1. **`respond(thread, input_user_message, context)`**
-   - Loads conversation history from store
-   - Converts thread items to agent input format
-   - Runs agent with streaming enabled
-   - Yields server-sent events for real-time updates
-
-2. **`to_message_content(input)`**
-   - Converts attachments to text content
-   - Currently returns placeholder (attachments not fully implemented)
-
-### ChatKit Storage Layer
-
-**Location:** `chatkit_integration/store.py`
-
-**Class:** `SQLChatStore`
-
-**Storage Models:**
-```python
-class ChatThread(SQLModel, table=True):
-    id: str
-    title: Optional[str]
-    status: Optional[str]
-    created_at: datetime
-    meta: Dict[str, Any]
-
-class ChatThreadItem(SQLModel, table=True):
-    id: str
-    thread_id: str  # FK to ChatThread
-    type: str       # "user_message", "assistant_message", etc.
-    created_at: datetime
-    payload: Dict[str, Any]  # Full item data as JSON
-```
-
-**Key Methods:**
-
-- **`generate_thread_id()`**: Creates UUID-based thread IDs
-- **`generate_item_id()`**: Creates UUID-based item IDs
-- **`save_thread()` / `load_thread()`**: Persist/retrieve thread metadata
-- **`add_thread_item()` / `save_item()`**: Add/update conversation items
-- **`load_thread_items()`**: Paginated item retrieval with cursor support
-- **`load_threads()`**: List all threads with pagination
-- **`delete_thread()` / `delete_thread_item()`**: Cleanup operations
-
-**Pagination:**
-The store implements cursor-based pagination using `after` cursors and `has_more` flags.
-
-### ChatKit Data Models
-
-**Location:** `chatkit_integration/models.py`
-
-**JSON Column Handling:**
-The models automatically detect SQLite vs PostgreSQL and use appropriate JSON column types:
-- **SQLite**: Text-based JSON serialization
-- **PostgreSQL**: Native JSONB for better performance
-
-### ChatKit Attachment Store
-
-**Class:** `NoOpAttachmentStore`
-
-Currently a stub implementation. File attachments are not persisted but tracked in thread items.
-
-### Integration with FastAPI
-
-**Endpoint:** `POST /chatkit`
-
-```python
-@app.post("/chatkit")
-async def chatkit_endpoint(request: Request):
-    result = await chatkit_server.process(await request.body(), {})
-    if isinstance(result, StreamingResult):
-        return StreamingResponse(result, media_type="text/event-stream")
-    return Response(content=result.json, media_type="application/json")
-```
-
-**Initialization:**
-```python
-chatkit_store = SQLChatStore(engine)
-chatkit_attachment_store = NoOpAttachmentStore()
-chatkit_server = MyChatKitServer(chatkit_store, chatkit_attachment_store)
-```
-
-### AgentContext
-
-ChatKit provides `AgentContext` to agents during execution:
-```python
-class AgentContext:
-    thread: ThreadMetadata
-    store: Store
-    request_context: Any
-```
-
-This allows agents to access conversation history and metadata.
+If you plan to activate ChatKit, you would need to:
+1. Register the `/chatkit` endpoint in `app.py`
+2. Initialize `MyChatKitServer` with the database engine
+3. Wire up authentication and authorization for chat access
 
 ---
 
@@ -956,63 +819,9 @@ async def internal_error_handler(request, exc): ...
 └─────────────────────────────────────────────┘
 ```
 
-### ChatKit Conversation Flow
+### Note on ChatKit
 
-```
-Client initiates chat
-    │
-    ▼
-POST /chatkit
-    │
-    ▼
-┌──────────────────────────────────────────┐
-│  MyChatKitServer.process()               │
-│  • Parse request body                     │
-│  • Identify thread_id                     │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────┐
-│  MyChatKitServer.respond()               │
-│  • Load thread metadata                   │
-│  • Load conversation history (200 items)  │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────┐
-│  simple_to_agent_input()                 │
-│  • Convert thread items to agent format   │
-│  • Structure as ResponseInputItems        │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────┐
-│  Runner.run_streamed()                   │
-│  • Execute assistant agent                │
-│  • Model: gpt-4.1-mini                    │
-│  • Stream tokens as generated             │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────┐
-│  stream_agent_response()                 │
-│  • Convert agent events to ChatKit events │
-│  • Yield ThreadStreamEvent objects        │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-┌──────────────────────────────────────────┐
-│  SQLChatStore.add_thread_item()          │
-│  • Persist user message                   │
-│  • Persist assistant response             │
-└──────────────────┬───────────────────────┘
-                   │
-                   ▼
-StreamingResponse (Server-Sent Events)
-    │
-    ▼
-Client receives real-time updates
-```
+ChatKit integration is not currently active in the application. See the [ChatKit Integration](#chatkit-integration-not-currently-implemented) section above for details.
 
 ---
 
@@ -1131,31 +940,9 @@ CREATE INDEX ix_api_debug_log_created_at ON api_debug_log(created_at);
 
 #### ChatKit Tables
 
-**`chatkit_thread` table:**
-```sql
-CREATE TABLE chatkit_thread (
-    id VARCHAR PRIMARY KEY,
-    title VARCHAR,
-    status VARCHAR,
-    created_at TIMESTAMP NOT NULL,
-    meta JSON NOT NULL DEFAULT '{}'
-);
-```
+**`chatkit_thread` and `chatkit_thread_item` tables:**
 
-**`chatkit_thread_item` table:**
-```sql
-CREATE TABLE chatkit_thread_item (
-    id VARCHAR PRIMARY KEY,
-    thread_id VARCHAR NOT NULL REFERENCES chatkit_thread(id),
-    type VARCHAR NOT NULL,  -- 'user_message', 'assistant_message'
-    created_at TIMESTAMP NOT NULL,
-    payload JSON NOT NULL DEFAULT '{}'
-);
-
-CREATE INDEX ix_chatkit_thread_item_thread_id ON chatkit_thread_item(thread_id);
-CREATE INDEX ix_chatkit_thread_item_type ON chatkit_thread_item(type);
-CREATE INDEX ix_chatkit_thread_item_created_at ON chatkit_thread_item(created_at);
-```
+These tables are defined in the codebase but **not currently used** as ChatKit is not integrated. See [ChatKit Integration](#chatkit-integration-not-currently-implemented) section for details.
 
 #### Legacy Composer (LLM Pipeline)
 

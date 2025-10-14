@@ -10,8 +10,7 @@
 2. [Local Development Setup](#local-development-setup)
 3. [Environment Configuration](#environment-configuration)
 4. [AgentKit Workflow Setup](#agentkit-workflow-setup)
-5. [ChatKit Integration](#chatkit-integration)
-6. [Database Setup](#database-setup)
+5. [Database Setup](#database-setup)
 7. [Testing](#testing)
 8. [Railway Deployment](#railway-deployment)
 9. [Production Checklist](#production-checklist)
@@ -101,7 +100,6 @@ sqlmodel            # ORM
 psycopg[binary]     # PostgreSQL driver (v3)
 openai              # OpenAI API client
 agents              # AgentKit SDK
-chatkit             # ChatKit SDK
 passlib[bcrypt]     # Password hashing
 python-multipart    # Form parsing
 httpx               # Async HTTP client
@@ -459,117 +457,6 @@ LIMIT 10;
 ```
 
 ---
-
-## ChatKit Integration
-
-### Overview
-
-MyApply integrates **Anthropic ChatKit** for conversational AI capabilities powered by AgentKit.
-
-### Setup Steps
-
-#### 1. Install ChatKit SDK
-
-Already included in `requirements.txt`:
-```bash
-pip install chatkit
-```
-
-#### 2. Configure ChatKit Server
-
-The server is initialized in `app.py`:
-
-```python
-from chatkit_integration.server import MyChatKitServer
-from chatkit_integration.store import SQLChatStore, NoOpAttachmentStore
-
-chatkit_store = SQLChatStore(engine)
-chatkit_attachment_store = NoOpAttachmentStore()
-chatkit_server = MyChatKitServer(chatkit_store, chatkit_attachment_store)
-```
-
-#### 3. Customize Agent
-
-Edit `chatkit_integration/server.py` to customize the assistant:
-
-```python
-self.assistant_agent = Agent[AgentContext](
-    model="gpt-4.1-mini",
-    name="Assistant",
-    instructions="You are a helpful assistant for MyApply users.",
-    model_settings=ModelSettings(temperature=0.8, max_tokens=2048),
-)
-```
-
-**Customization options:**
-- **Model**: Change to `gpt-4o` for more capable responses
-- **Instructions**: Tailor to your use case
-- **Temperature**: Lower (0.3-0.5) for deterministic, higher (0.8-1.0) for creative
-- **Max tokens**: Increase for longer responses
-
-#### 4. Test ChatKit
-
-**API Test:**
-```bash
-# Send message to ChatKit
-curl -X POST http://localhost:8000/chatkit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "thread_id": "test-thread-123",
-    "message": {
-      "role": "user",
-      "content": "Hello, can you help me with my resume?"
-    }
-  }'
-```
-
-**Response:**
-Server-sent events (SSE) stream with agent responses.
-
-#### 5. View ChatKit Data
-
-**List threads:**
-```sql
-SELECT id, title, status, created_at
-FROM chatkit_thread
-ORDER BY created_at DESC;
-```
-
-**View conversation:**
-```sql
-SELECT id, type, created_at, payload
-FROM chatkit_thread_item
-WHERE thread_id = 'thread-id-here'
-ORDER BY created_at ASC;
-```
-
-### ChatKit Storage
-
-**Tables:**
-- `chatkit_thread`: Thread metadata
-- `chatkit_thread_item`: Individual messages and responses
-
-**Data is persisted in the same database as application data.**
-
-### Advanced Configuration
-
-**Enable File Attachments:**
-
-1. Implement `AttachmentStore` in `chatkit_integration/store.py`:
-   ```python
-   class S3AttachmentStore(AttachmentStore[Any]):
-       async def save_attachment(self, attachment, context):
-           # Upload to S3
-
-       async def load_attachment(self, attachment_id, context):
-           # Download from S3
-   ```
-
-2. Update server initialization:
-   ```python
-   chatkit_attachment_store = S3AttachmentStore(bucket="myapply-attachments")
-   chatkit_server = MyChatKitServer(chatkit_store, chatkit_attachment_store)
-   ```
 
 ---
 
@@ -1442,7 +1329,7 @@ psql -U myapply_user myapply < backup.sql
 DELETE FROM api_debug_log WHERE created_at < NOW() - INTERVAL '30 days';
 
 -- Remove old chat history (optional)
-DELETE FROM chatkit_thread_item WHERE created_at < NOW() - INTERVAL '90 days';
+# ChatKit tables exist but are not currently used in the application
 ```
 
 **Optimize (PostgreSQL):**
@@ -1501,7 +1388,6 @@ pytest -v
 - **FastAPI**: [fastapi.tiangolo.com](https://fastapi.tiangolo.com)
 - **SQLModel**: [sqlmodel.tiangolo.com](https://sqlmodel.tiangolo.com)
 - **OpenAI AgentKit**: [platform.openai.com/docs/agentkit](https://platform.openai.com/docs/agentkit)
-- **ChatKit**: [docs.anthropic.com/chatkit](https://docs.anthropic.com/chatkit)
 - **Railway**: [docs.railway.app](https://docs.railway.app)
 - **Psycopg3**: [www.psycopg.org/psycopg3](https://www.psycopg.org/psycopg3/)
 

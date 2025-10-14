@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional
 
 from sqlmodel import Session, select
 
 from models import APIDebugLog
-from services.workflow_output_parser import parse_resume_builder_result
+from services.workflow_output_parser import (
+    ResumeBuilderParsedOutput,
+    parse_resume_builder_result,
+)
 
 
-DecodedAgentkitResult = Tuple[
-    Optional[str],
-    Dict[str, Any],
-    Optional[Dict[str, Any]],
-    Optional[List[str]],
-    Optional[str],
-]
+@dataclass
+class DecodedAgentkitResult:
+    run_id: Optional[str]
+    artifacts: ResumeBuilderParsedOutput
+    workflow_status: Optional[str]
+    source: str = "agentkit_debug_log"
 
 
 def _iter_agentkit_logs(session: Session, application_id: str):
@@ -52,8 +55,12 @@ def decode_latest_agentkit_response(
         if response_data is None:
             continue
 
-        parsed_output, structured_job, resume_bullets, cover_letter = parse_resume_builder_result(response_data)
-        if not structured_job and not resume_bullets and not cover_letter:
+        artifacts = parse_resume_builder_result(response_data)
+        if (
+            not artifacts.has_structured_job
+            and not artifacts.resume_bullets
+            and not artifacts.cover_letter
+        ):
             continue
 
         run_id: Optional[str] = None
@@ -61,24 +68,30 @@ def decode_latest_agentkit_response(
             run_id = response_data.get("id") or response_data.get("run_id")
 
         if not run_id:
-            run_id = parsed_output.get("id") or parsed_output.get("run_id")
+            run_id = artifacts.payload.get("id") or artifacts.payload.get("run_id")
 
         # Tag the decoded payload so downstream consumers know the source.
-        parsed_output = dict(parsed_output)
-        parsed_output.setdefault("decoder_source", "agentkit_debug_log")
+        artifacts.payload.setdefault("decoder_source", "agentkit_debug_log")
+        workflow_status = artifacts.payload.get("workflow_status")
         if (
-            "workflow_status" not in parsed_output
+            not workflow_status
             and isinstance(response_data, dict)
         ):
             status_value = response_data.get("status")
             if status_value:
-                parsed_output["workflow_status"] = status_value
+                artifacts.payload["workflow_status"] = status_value
+                workflow_status = status_value
 
-        return run_id, parsed_output, structured_job, resume_bullets, cover_letter
+        return DecodedAgentkitResult(
+            run_id=run_id,
+            artifacts=artifacts.ensure_defaults(),
+            workflow_status=workflow_status,
+        )
 
     return None
 
 
 __all__ = [
     "decode_latest_agentkit_response",
+    "DecodedAgentkitResult",
 ]

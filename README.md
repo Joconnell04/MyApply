@@ -118,29 +118,57 @@ pytest --cov=. --cov-report=html      # With coverage
 
 ---
 
-## 🤝 AgentKit Setup
+## 🤝 AgentKit Workflow Setup
 
-1. **Configure credentials**
-   - Set `OPENAI_API_KEY` in your `.env` file (copy `.env.example` as a starter).
-   - Optionally override `LLM_MODEL` and `COVER_LETTER_MODEL` if you prefer different OpenAI models.
-2. **Map workflow IDs**
-   - The backend orchestrator calls the all-in-one `ResumeBuilderV2` AgentKit workflow. Update the ID in [`workflow_constants.py`](workflow_constants.py) to match your AgentKit deployment.
-3. **Start the app and sign in**
-   - Run `uvicorn app:app --reload`, register or log in, and populate your Profile → MyLife JSON so the composer has data to work with.
-4. **Trigger the workflows**
-   - Use the Compose UI or call the REST endpoints (`/api/jd/ingest`, `/api/resume/build`) with an authenticated session. Example `curl` commands are provided below.
-   - Run `pytest tests/test_workflows.py` for a quick smoke test.
-5. **Troubleshoot connectivity**
-   - Ensure outbound network access to OpenAI from your environment.
-   - Check server logs for `Workflow execution failed` messages; the error payload will tell you whether the AgentKit call or JSON parsing failed.
+MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows **locally** within the application. Agent definitions live in the codebase (see [services/resume_builder_agents.py](services/resume_builder_agents.py)), not on an external platform.
 
-> ℹ️ The backend uses the OpenAI Workflows API via `services/openai_workflows.py` with synchronous polling for the ResumeBuilderV2 flow.
+### How It Works
+
+1. **Agent Definitions**: Two agents orchestrate the workflow
+   - `job_scraper` - Extracts structured job data from URLs or text
+   - `bullet_generator` - Creates tailored resume bullets based on job requirements
+
+2. **Local Execution**: Agents run via the AgentKit SDK's `Runner.run()` API
+   - See [services/resume_builder_service.py](services/resume_builder_service.py) for the orchestration logic
+   - Execution is synchronous with async wrappers for FastAPI integration
+
+3. **No External Workflow IDs**: The workflow ID in [`workflow_constants.py`](workflow_constants.py) is used for **logging and tracing only**, not for calling an external API
+
+### Setup Steps
+
+1. **Configure API Key**
+   ```bash
+   # In your .env file
+   OPENAI_API_KEY=sk-your-openai-api-key
+   LLM_MODEL=gpt-4o-mini  # Optional, defaults to gpt-4o-mini
+   ```
+
+2. **Start the Application**
+   ```bash
+   uvicorn app:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **Test the Workflows**
+   - Use the web UI at http://127.0.0.1:8000
+   - Or call REST endpoints: `/api/jd/ingest` and `/api/resume/build`
+   - Run tests: `pytest tests/test_workflows.py`
+
+### Architecture Details
+
+- **Service Layer**: [services/resume_builder_service.py](services/resume_builder_service.py)
+- **Agent Definitions**: [services/resume_builder_agents.py](services/resume_builder_agents.py)
+- **Output Parsing**: [services/workflow_output_parser.py](services/workflow_output_parser.py)
+- **Pipeline Coordinator**: [services/resume_builder_pipeline.py](services/resume_builder_pipeline.py)
+
+See [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) for detailed workflow execution flow.
 
 ---
 
 ## 🤖 Workflow API Endpoints
 
-Both endpoints call the single ResumeBuilderV2 workflow. `/api/jd/ingest` caches the structured job data (and downstream artifacts) while `/api/resume/build` surfaces the resume bullets and cover letter, reusing cached output when available.
+Both endpoints execute the ResumeBuilderV2 workflow using the AgentKit SDK. The workflow runs locally within the application, with agents defined in [services/resume_builder_agents.py](services/resume_builder_agents.py).
+
+`/api/jd/ingest` caches the structured job data (and downstream artifacts) while `/api/resume/build` surfaces the resume bullets and cover letter, reusing cached output when available.
 
 ### JD Ingest — Structured Job Data
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from routers.utils import to_dict, try_parse_json_text
 
@@ -31,6 +32,37 @@ _COVER_LETTER_KEYS = [
     "cover_letter_summary",
 ]
 
+
+@dataclass
+class ResumeBuilderParsedOutput:
+    """
+    Parsed artifacts from a ResumeBuilder workflow run.
+
+    Attributes:
+        payload: The flattened workflow payload including any derived fields.
+        structured_job_data: Structured job description extracted from the payload.
+        resume_bullets: Normalized resume bullet list (may be empty).
+        cover_letter: Generated cover letter, if available.
+    """
+
+    payload: Dict[str, Any]
+    structured_job_data: Optional[Dict[str, Any]]
+    resume_bullets: List[str]
+    cover_letter: Optional[str]
+
+    @property
+    def has_structured_job(self) -> bool:
+        return self.structured_job_data is not None
+
+    def ensure_defaults(self) -> ResumeBuilderParsedOutput:
+        """
+        Ensure that standard keys exist on the payload for downstream consumers.
+        """
+        self.payload.setdefault("structured_job_data", self.structured_job_data)
+        self.payload.setdefault("resume_bullets", self.resume_bullets)
+        if self.cover_letter:
+            self.payload.setdefault("cover_letter", self.cover_letter)
+        return self
 
 def flatten_workflow_output(run: Any) -> Dict[str, Any]:
     run_dict = to_dict(run) or {}
@@ -204,7 +236,7 @@ def extract_cover_letter(payload: Any) -> Optional[str]:
     return None
 
 
-def parse_resume_builder_result(run: Any) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Optional[List[str]], Optional[str]]:
+def parse_resume_builder_result(run: Any) -> ResumeBuilderParsedOutput:
     flattened = flatten_workflow_output(run)
     parsed_output = dict(flattened)
 
@@ -246,14 +278,18 @@ def parse_resume_builder_result(run: Any) -> Tuple[Dict[str, Any], Optional[Dict
     if (not cover_letter) and parsed_from_text:
         cover_letter = extract_cover_letter(parsed_from_text)
 
-    if structured_job:
-        parsed_output.setdefault("structured_job_data", structured_job)
-    if resume_bullets:
-        parsed_output.setdefault("resume_bullets", resume_bullets)
+    resume_bullets = resume_bullets or []
+    parsed_output.setdefault("structured_job_data", structured_job)
+    parsed_output.setdefault("resume_bullets", resume_bullets)
     if cover_letter:
         parsed_output.setdefault("cover_letter", cover_letter)
 
-    return parsed_output, structured_job, resume_bullets, cover_letter
+    return ResumeBuilderParsedOutput(
+        payload=parsed_output,
+        structured_job_data=structured_job,
+        resume_bullets=resume_bullets,
+        cover_letter=cover_letter,
+    ).ensure_defaults()
 
 
 __all__ = [
@@ -262,4 +298,5 @@ __all__ = [
     "extract_resume_bullets",
     "extract_cover_letter",
     "parse_resume_builder_result",
+    "ResumeBuilderParsedOutput",
 ]
