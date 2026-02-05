@@ -1,4 +1,4 @@
-# 🎯 MyApply
+# MyApply
 
 **AI-powered career tooling that transforms your experience into tailored resumes and cover letters.**
 
@@ -10,43 +10,43 @@ MyApply is a FastAPI-powered platform that combines structured experience graphs
 
 ---
 
-## ✨ Features
+## Features
 
-### 🤖 AgentKit Workflow Integration
+### AgentKit Workflow Integration
 - **Intent Routing** - Smart workflow selection based on user needs
 - **JD Structuring** - Parse job descriptions into structured data
 - **Resume Building** - Generate tailored resumes with AI
 - **Backend Orchestration** - Workflows communicate via backend conductor pattern
 - **Persistent Metadata** - All runs and artifacts stored in database
 
-### 👤 User Management
+### User Management
 - **Secure Authentication** - CSRF-protected sessions with bcrypt hashing
 - **Rate Limiting** - Login attempt throttling
 - **Profile Management** - Store location, skills, and experience
 - **Admin Panel** - User and run management
 
-### 📝 Experience Graph
+### Experience Graph
 - **Profile-based JSON editor** - Manage the MyLife graph directly from the Profile page with inline formatting helpers
 - **Append helper** - Merge new JSON snippets safely with automatic pretty-printing
 - **Graph Validation** - Schema enforcement for nodes and edges
 - **Fact Ranking** - Score experiences against job requirements
 - **Evidence Retrieval** - Query system for experience matching
 
-### 🗺️ Job Tracking
+### Job Tracking
 - **Application Dashboard** - Track all job applications
 - **Interactive Maps** - Mapbox GL JS with job location clustering
 - **Distance Calculations** - Haversine distance from home
 - **Isochrone Visualization** - Travel time polygons for commute planning
 - **Location Intelligence** - Multi-location support with confidence scores
 
-### 🎨 AI Composer
+### AI Composer
 - **JD Factor Extraction** - Identify key requirements from postings
 - **Resume Bullet Generation** - AI-powered achievement bullets
 - **Cover Letter Writing** - Personalized cover letters with fact references
 - **ATS Optimization** - Keyword coverage tracking
 - **Token Usage Tracking** - Monitor LLM costs
 
-### 🔧 Developer Tools
+### Developer Tools
 - **AgentKit Tool API** - JSON endpoints for multi-agent integration
 - **Tool Specification** - OpenAPI-style tool definitions
 - **Bundle Storage** - Stateful generation bundles with TTL
@@ -55,7 +55,7 @@ MyApply is a FastAPI-powered platform that combines structured experience graphs
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
@@ -70,7 +70,7 @@ MyApply is a FastAPI-powered platform that combines structured experience graphs
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Local Development
 
@@ -118,11 +118,56 @@ pytest --cov=. --cov-report=html      # With coverage
 
 ---
 
-## 🤝 AgentKit Workflow Setup
+## How It Works
 
-MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows **locally** within the application. Agent definitions live in the codebase (see [services/resume_builder_agents.py](services/resume_builder_agents.py)), not on an external platform.
+MyApply is designed to streamline the job application process by using AI to create personalized application materials. Here's what happens under the hood:
 
-### How It Works
+### The Experience Graph
+
+At the core of MyApply is your "MyLife" graph - a structured representation of your professional experience, skills, projects, and accomplishments. Think of it as a comprehensive database of everything you've done in your career. The graph stores:
+
+- **Nodes**: Individual experiences like jobs, projects, skills, certifications, or achievements
+- **Edges**: Relationships between these experiences with temporal information
+
+This structured format allows the AI to intelligently select and combine relevant experiences based on job requirements.
+
+### Workflow Execution
+
+When you paste a job description, MyApply runs through two main workflows using the OpenAI AgentKit SDK:
+
+1. **Job Description Analysis**: The system extracts key information from the posting - required skills, experience level, location, responsibilities, and qualifications. This creates a structured representation that can be matched against your experience graph.
+
+2. **Resume Generation**: The AI queries your experience graph to find the most relevant facts and accomplishments for the specific role. It then generates tailored resume bullets and a cover letter that highlight your matching qualifications while maintaining authenticity.
+
+The workflows run locally within the application. All agent definitions and orchestration logic are in the codebase, not on an external platform. This gives you full control over how your data is processed.
+
+### Smart Matching
+
+The system uses a fact-ranking algorithm to score your experiences against job requirements. It considers:
+- Keyword matching for skills and technologies
+- Temporal relevance of experiences
+- Depth of experience in specific areas
+- Alignment with role responsibilities
+
+This ensures the most relevant parts of your background are highlighted for each application.
+
+### Persistence and Tracking
+
+Every workflow run and its artifacts are stored in the database. This allows you to:
+- Track all your job applications in one place
+- Reuse structured job data across multiple applications
+- Monitor token usage and costs
+- Visualize job locations on interactive maps with commute time estimates
+
+The result is an application process that's both efficient and data-driven, helping you apply to more jobs while maintaining quality and personalization.
+
+---
+
+## AgentKit Workflow Setup
+
+MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows locally within the application. Agent definitions live in the codebase (see [services/resume_builder_agents.py](services/resume_builder_agents.py)), not on an external platform.
+
+### How Workflows Execute
 
 1. **Agent Definitions**: Two agents orchestrate the workflow
    - `job_scraper` - Extracts structured job data from URLs or text
@@ -132,7 +177,7 @@ MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows **locally** wit
    - See [services/resume_builder_service.py](services/resume_builder_service.py) for the orchestration logic
    - Execution is synchronous with async wrappers for FastAPI integration
 
-3. **No External Workflow IDs**: The workflow ID in [`workflow_constants.py`](workflow_constants.py) is used for **logging and tracing only**, not for calling an external API
+3. **No External Workflow IDs**: The workflow ID in [`workflow_constants.py`](workflow_constants.py) is used for logging and tracing only, not for calling an external API
 
 ### Setup Steps
 
@@ -164,13 +209,13 @@ See [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) for detailed workflow
 
 ---
 
-## 🤖 Workflow API Endpoints
+## Workflow API Endpoints
 
 Both endpoints execute the ResumeBuilderV2 workflow using the AgentKit SDK. The workflow runs locally within the application, with agents defined in [services/resume_builder_agents.py](services/resume_builder_agents.py).
 
 `/api/jd/ingest` caches the structured job data (and downstream artifacts) while `/api/resume/build` surfaces the resume bullets and cover letter, reusing cached output when available.
 
-### JD Ingest — Structured Job Data
+### JD Ingest - Structured Job Data
 
 ```bash
 POST /api/jd/ingest
@@ -200,7 +245,7 @@ curl -X POST http://localhost:8000/api/jd/ingest \
 }
 ```
 
-### ResumeBuilderV2 — Resume + Cover Letter
+### ResumeBuilderV2 - Resume + Cover Letter
 
 ```bash
 POST /api/resume/build
@@ -250,7 +295,7 @@ curl -X POST http://localhost:8000/api/resume/build \
 
 ---
 
-## ☁️ Railway Deployment
+## Railway Deployment
 
 Deploy to Railway in 3 steps:
 
@@ -272,7 +317,7 @@ DATABASE_URL=postgresql+psycopg://user:pass@host:port/db
 
 Railway auto-detects FastAPI and sets `PORT` and `DATABASE_URL`.
 
-**📚 Complete deployment guide:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - includes:
+**Complete deployment guide:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - includes:
 - Database configuration (psycopg driver setup)
 - SSL configuration for Railway
 - Template path fixes
@@ -281,7 +326,7 @@ Railway auto-detects FastAPI and sets `PORT` and `DATABASE_URL`.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 MyApply/
@@ -316,7 +361,7 @@ MyApply/
 
 ---
 
-## 🔒 Environment Variables
+## Environment Variables
 
 ### Required
 
@@ -349,7 +394,7 @@ PORT=8000                                     # Server port
 
 ---
 
-## 📊 Database Schema
+## Database Schema
 
 ### Core Tables
 
@@ -376,17 +421,17 @@ alembic upgrade head
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Test Coverage
 
-- ✅ Authentication flows (CSRF, rate limiting, sessions)
-- ✅ Profile & job application APIs
-- ✅ AgentKit workflow orchestration
-- ✅ Locations array serialization
-- ✅ Graph validation pipeline powering fact ranking
-- ✅ Bundle storage with TTL expiry
-- ✅ Evidence retrieval & pagination
+- Authentication flows (CSRF, rate limiting, sessions)
+- Profile & job application APIs
+- AgentKit workflow orchestration
+- Locations array serialization
+- Graph validation pipeline powering fact ranking
+- Bundle storage with TTL expiry
+- Evidence retrieval & pagination
 
 ### Run Tests
 
@@ -407,7 +452,7 @@ pytest -m "not slow"
 
 ---
 
-## 🔧 Development
+## Development
 
 ### Code Quality
 
@@ -431,7 +476,7 @@ sqlite3 myapply.db
 # PostgreSQL console (Railway)
 railway run psql $DATABASE_URL
 
-# Reset database (⚠️ destroys data)
+# Reset database (destroys data)
 rm myapply.db
 uvicorn app:app --reload  # Recreates tables
 ```
@@ -462,7 +507,7 @@ uvicorn app:app --reload  # Recreates tables
 
 ---
 
-## 🗺️ Map Features
+## Map Features
 
 ### Setup Mapbox
 
@@ -486,7 +531,7 @@ uvicorn app:app --reload  # Recreates tables
 
 ---
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -503,7 +548,7 @@ uvicorn app:app --reload  # Recreates tables
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Please:
 
@@ -522,13 +567,13 @@ Contributions welcome! Please:
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
 - [OpenAI](https://openai.com/) - LLM & AgentKit platform
@@ -538,7 +583,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment guide (Railway, PostgreSQL, psycopg setup, troubleshooting)
 - **[MyLifeSchemaInstructions.md](MyLifeSchemaInstructions.md)** - Experience graph schema reference
@@ -546,20 +591,20 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🚀 What's Next?
+## Future Plans
 
-- [ ] Real-time collaboration on experience graphs
-- [ ] Multi-language support
-- [ ] Resume templates & visual editor
-- [ ] Chrome extension for quick JD capture
-- [ ] Mobile app (React Native)
-- [ ] Analytics dashboard for application tracking
-- [ ] ATS parsing & compatibility scoring
-- [ ] Interview prep integration
+- Real-time collaboration on experience graphs
+- Multi-language support
+- Resume templates & visual editor
+- Chrome extension for quick JD capture
+- Mobile app (React Native)
+- Analytics dashboard for application tracking
+- ATS parsing & compatibility scoring
+- Interview prep integration
 
 ---
 
-**Built with ❤️ for job seekers everywhere.**
+Built for job seekers who want to apply smarter, not harder.
 
 **Questions?** Open an issue or start a discussion!
 
@@ -567,8 +612,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Quick Links
 
-- 🌐 [Live Demo](https://myapply-production.up.railway.app)
-- 📖 [Deployment Guide](DEPLOYMENT_GUIDE.md)
-- 🐛 [Report Bug](https://github.com/your-username/MyApply/issues)
-- 💡 [Request Feature](https://github.com/your-username/MyApply/issues)
-- 💬 [Discussions](https://github.com/your-username/MyApply/discussions)
+- [Live Demo](https://myapply-production.up.railway.app)
+- [Deployment Guide](DEPLOYMENT_GUIDE.md)
+- [Report Bug](https://github.com/your-username/MyApply/issues)
+- [Request Feature](https://github.com/your-username/MyApply/issues)
+- [Discussions](https://github.com/your-username/MyApply/discussions)
