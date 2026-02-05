@@ -45,8 +45,7 @@ from validation import sanitize_string, validate_json_size, validate_url
 
 class Settings(BaseSettings):
     SECRET_KEY: str = "change-me"
-    # Railway production database (overridden by .env for local development)
-    DATABASE_URL: str = "postgresql+psycopg://postgres:cFrOJOrnwXQfQKVUAnkNwPYPronyPyMq@ballast.proxy.rlwy.net:33607/railway"
+    DATABASE_URL: str = "sqlite:///./myapply.db"
     SESSION_COOKIE_NAME: str = "app_session"
     SESSION_SECURE: Union[bool, Literal["auto"]] = "auto"
     SESSION_SAMESITE: str = "lax"
