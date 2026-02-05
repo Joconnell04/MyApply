@@ -167,7 +167,7 @@ The result is an application process that's both efficient and data-driven, help
 
 MyApply uses the **OpenAI AgentKit SDK** to execute AI workflows locally within the application. Agent definitions live in the codebase (see [services/resume_builder_agents.py](services/resume_builder_agents.py)), not on an external platform.
 
-### How Workflows Execute
+### Technical Workflow Details
 
 1. **Agent Definitions**: Two agents orchestrate the workflow
    - `job_scraper` - Extracts structured job data from URLs or text
